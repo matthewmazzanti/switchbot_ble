@@ -1,9 +1,6 @@
-import asyncio
 import dataclasses as dc
 import typing as ty
 
-from bleak import BleakClient
-from bleak_retry_connector import establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.cover import (
@@ -17,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
 from .. import generic_entity
-from ..core import SwitchbotCoordinator, SwitchbotEntity
+from ..core import ConnectableSwitchbotCoordinator, SwitchbotEntity
 from ..proto.blind_tilt import (
     MODERN_FW,
     BlindTiltManufacturerData,
@@ -25,7 +22,7 @@ from ..proto.blind_tilt import (
     SetPosition,
     Stop,
 )
-from ..proto.core import MANUFACTURER_ID, SWITCHBOT_SERVICE, WRITE_CHAR_UUID
+from ..proto.core import MANUFACTURER_ID, SWITCHBOT_SERVICE
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -60,9 +57,7 @@ class BlindTiltState:
         )
 
 
-class BlindTiltCoordinator(SwitchbotCoordinator[BlindTiltState]):
-    # Prevent overlapping BLE connections for this device.
-    _ble_lock: asyncio.Lock
+class BlindTiltCoordinator(ConnectableSwitchbotCoordinator[BlindTiltState]):
     # Last-seen of each advertisement field; they arrive in separate frames.
     _last_mfr: BlindTiltManufacturerData | None
     _last_svc: BlindTiltServiceData | None
@@ -87,7 +82,6 @@ class BlindTiltCoordinator(SwitchbotCoordinator[BlindTiltState]):
             connectable=True,
             initial=self._parse(adv) if adv else None,
         )
-        self._ble_lock = asyncio.Lock()
 
     def _parse(
         self, service_info: bluetooth.BluetoothServiceInfoBleak
@@ -110,22 +104,7 @@ class BlindTiltCoordinator(SwitchbotCoordinator[BlindTiltState]):
             return None
         return BlindTiltState.combine(self._last_mfr, self._last_svc)
 
-    # --- command / connection path (centralized on the device object) ---
-
-    async def async_send_command(self, payload: bytes) -> None:
-        async with self._ble_lock:
-            ble_device = bluetooth.async_ble_device_from_address(
-                self.hass,
-                self.address,
-                connectable=True,
-            )
-            if ble_device is None:
-                raise RuntimeError(f"BLE device {self.address} not available")
-
-            async with await establish_connection(
-                BleakClient, ble_device, name=self.device_name
-            ) as client:
-                await client.write_gatt_char(WRITE_CHAR_UUID, payload, response=False)
+    # --- commands (connection path lives in ConnectableSwitchbotCoordinator) ---
 
     async def async_set_position(self, position: int) -> None:
         # We don't read the device firmware, so assume modern. Reading the real

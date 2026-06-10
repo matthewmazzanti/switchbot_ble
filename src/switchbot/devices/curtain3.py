@@ -1,8 +1,5 @@
-import asyncio
 import typing as ty
 
-from bleak import BleakClient
-from bleak_retry_connector import establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.components.cover import (
     ATTR_POSITION,
@@ -16,8 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
 from .. import generic_entity
-from ..core import SwitchbotCoordinator, SwitchbotEntity
-from ..proto.core import SWITCHBOT_SERVICE, WRITE_CHAR_UUID
+from ..core import ConnectableSwitchbotCoordinator, SwitchbotEntity
+from ..proto.core import SWITCHBOT_SERVICE
 from ..proto.curtain3 import INDEX_SINGLE, Curtain3ServiceData, SetPercentage, Stop
 
 
@@ -39,10 +36,7 @@ def parse_advertisement(
         return None
 
 
-class Curtain3Coordinator(SwitchbotCoordinator[Curtain3ServiceData]):
-    # Prevent overlapping BLE connections for this device.
-    _ble_lock: asyncio.Lock
-
+class Curtain3Coordinator(ConnectableSwitchbotCoordinator[Curtain3ServiceData]):
     def __init__(
         self,
         hass: HomeAssistant,
@@ -60,29 +54,13 @@ class Curtain3Coordinator(SwitchbotCoordinator[Curtain3ServiceData]):
             connectable=True,
             initial=parse_advertisement(adv) if adv else None,
         )
-        self._ble_lock = asyncio.Lock()
 
     def _parse(
         self, service_info: bluetooth.BluetoothServiceInfoBleak
     ) -> Curtain3ServiceData | None:
         return parse_advertisement(service_info)
 
-    # --- command / connection path ---
-
-    async def async_send_command(self, payload: bytes) -> None:
-        async with self._ble_lock:
-            ble_device = bluetooth.async_ble_device_from_address(
-                self.hass,
-                self.address,
-                connectable=True,
-            )
-            if ble_device is None:
-                raise RuntimeError(f"BLE device {self.address} not available")
-
-            async with await establish_connection(
-                BleakClient, ble_device, name=self.device_name
-            ) as client:
-                await client.write_gatt_char(WRITE_CHAR_UUID, payload, response=False)
+    # --- commands (connection path lives in ConnectableSwitchbotCoordinator) ---
 
     async def async_set_curtain_position(self, position: int) -> None:
         """`position` is the SwitchBot position (0 = open, 100 = closed)."""

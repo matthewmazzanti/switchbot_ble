@@ -32,6 +32,40 @@ def is_pairing(type_byte: int) -> bool:
 MANUFACTURER_ID = 2409  # manufacturer-data company id (0x0969)
 SWITCHBOT_SERVICE = "0000fd3d-0000-1000-8000-00805f9b34fb"  # service-data UUID
 WRITE_CHAR_UUID = "cba20002-224d-11e6-9fb8-0002a5d5c51b"  # GATT command-write char
+NOTIFY_CHAR_UUID = "cba20003-224d-11e6-9fb8-0002a5d5c51b"  # GATT response-notify char
+
+# Response status byte (reply[0]) on the notify char. The app treats both 0x01
+# and 0x06 (bootloader) as success; 0x02 error, 0x03 busy, etc. are failures.
+# See decomp BleMsgParser.java (WOCODE_RESP_STATUS_*).
+RESP_STATUS_OK = 0x01
+RESP_STATUS_BOOTLOADER = 0x06
+RESP_STATUS_OK_SET = frozenset((RESP_STATUS_OK, RESP_STATUS_BOOTLOADER))
+
+
+@dataclass(frozen=True, slots=True)
+class CommandReply:
+    """The generic command acknowledgement shared by every notify reply.
+
+    Per decomp (BleMsgParser), every reply leads with a status byte; the rest is
+    command-specific and decoded by per-device response types (e.g. blind_tilt's
+    PositionResponse). This captures only the universal accept/reject signal, so
+    it works for any command on any device without assuming a payload shape.
+    """
+
+    status: int
+
+    @property
+    def ok(self) -> bool:
+        return self.status in RESP_STATUS_OK_SET
+
+    def to_bytes(self) -> bytes:
+        return bytes([self.status])
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> Self:
+        if not data:
+            raise ValueError("empty command reply")
+        return cls(status=data[0])
 
 
 def build(*parts: int | bytes) -> bytes:

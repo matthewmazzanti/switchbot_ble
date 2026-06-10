@@ -1,6 +1,12 @@
 import abc
+import asyncio
+import contextlib
 import logging
 
+from bleak import BleakClient
+from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
+from bleak_retry_connector import establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth.passive_update_coordinator import (
     PassiveBluetoothCoordinatorEntity,
@@ -10,11 +16,23 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry
 from homeassistant.helpers.entity import Entity
 
+from .proto.core import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID, CommandReply
+
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "switchbot"
 
 CONF_DEVICE_TYPE = "device_type"
+
+# Command path tuning. The device replies on the notify char after acting on a
+# command; we await that reply (confirming delivery) and retry the whole
+# connect+write+await exchange if it fails or times out.
+COMMAND_TIMEOUT = 8.0  # seconds to wait for the device's notify reply
+COMMAND_ATTEMPTS = 3  # total tries per command before giving up
+
+
+class CommandError(Exception):
+    """A SwitchBot GATT command failed: no reply, or a non-OK status byte."""
 
 
 def normalize_mac(mac: str) -> str:
@@ -80,6 +98,140 @@ class SwitchbotCoordinator[T](PassiveBluetoothDataUpdateCoordinator, abc.ABC):
         """Device-major entity definition: the one place that says what this
         device exposes, per platform. Thin platform files forward here."""
         raise NotImplementedError
+
+
+class ConnectableSwitchbotCoordinator[T](SwitchbotCoordinator[T]):
+    """Coordinator for devices we issue GATT commands to.
+
+    Centralizes the command path so device subclasses just build payloads:
+    serialize on a lock, connect (re-resolving the BLE path on retry), subscribe
+    to the notify char, write the command, and await the device's status reply —
+    retrying the whole exchange on failure. The await is what makes a command
+    reliable: a write-without-response that's silently dropped (e.g. a busy
+    ESPHome proxy) surfaces here as a timeout and gets retried, instead of
+    vanishing. Advertisement-only devices use SwitchbotCoordinator directly.
+
+    TODO (maybe): we connect + disconnect per command. A live trace showed the
+    actual write->notify exchange is ~16ms; the seconds of latency are all
+    connect + disconnect, and on a single local adapter those radio ops
+    serialize, so commanding N devices at once queues them. Two possible
+    optimizations:
+      1. cached_services on establish_connection — skips GATT service discovery
+         on reconnect (smaller connect cost, still connects every command).
+      2. short-lived connection reuse — hold the client open for a few idle
+         seconds and reuse it for back-to-back commands, moving the ~2s
+         disconnect off the critical path. Bigger change: needs a disconnect
+         callback to invalidate the cache, once-per-connection notify setup, an
+         idle-disconnect timer that races the command lock, and clean teardown
+         on unload.
+    Still debating #2: with a single adapter, concurrent commands to several
+    devices already serialize, and a slow/unreachable device blocks the others
+    until its timeout + retries elapse — so the win depends on adapter/proxy
+    topology (an ESPHome proxy per area would parallelize and matters more than
+    reuse). Revisit if command latency becomes a real problem.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        address: str,
+        device_name: str,
+        device_type: str,
+        mode: bluetooth.BluetoothScanningMode,
+        connectable: bool,
+        initial: T | None,
+    ) -> None:
+        super().__init__(
+            hass, address, device_name, device_type, mode, connectable, initial
+        )
+        # Serialize commands: never two overlapping connections to one device.
+        self._ble_lock = asyncio.Lock()
+
+    async def async_send_command(self, payload: bytes) -> None:
+        async with self._ble_lock:
+            last_err: Exception | None = None
+            for attempt in range(1, COMMAND_ATTEMPTS + 1):
+                try:
+                    await self._send_command_once(payload)
+                    return
+                except (CommandError, BleakError, TimeoutError) as err:
+                    last_err = err
+                    _LOGGER.debug(
+                        "%s: command attempt %d/%d failed: %s",
+                        self.device_name,
+                        attempt,
+                        COMMAND_ATTEMPTS,
+                        err,
+                    )
+            assert last_err is not None  # loop ran at least once
+            raise last_err
+
+    async def _send_command_once(self, payload: bytes) -> None:
+        ble_device = bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        )
+        if ble_device is None:
+            raise CommandError(f"BLE device {self.address} not available")
+        _LOGGER.debug(
+            "%s: resolved BLE device %s via %s",
+            self.device_name,
+            ble_device.address,
+            ble_device.details,
+        )
+
+        # Re-resolve the best device on each connect retry; fall back to the one
+        # we already have if the lookup momentarily returns nothing.
+        def fresh_ble_device() -> BLEDevice:
+            return (
+                bluetooth.async_ble_device_from_address(
+                    self.hass, self.address, connectable=True
+                )
+                or ble_device
+            )
+
+        _LOGGER.debug("%s: connecting", self.device_name)
+        async with await establish_connection(
+            BleakClient,
+            ble_device,
+            name=self.device_name,
+            ble_device_callback=fresh_ble_device,
+        ) as client:
+            _LOGGER.debug("%s: connected", self.device_name)
+            loop = asyncio.get_running_loop()
+            reply: asyncio.Future[bytes] = loop.create_future()
+
+            def _on_notify(_char: object, data: bytearray) -> None:
+                _LOGGER.debug(
+                    "%s: notify <- %s", self.device_name, bytes(data).hex(" ")
+                )
+                if not reply.done():
+                    reply.set_result(bytes(data))
+
+            await client.start_notify(NOTIFY_CHAR_UUID, _on_notify)
+            try:
+                # SwitchBot's command char is write-without-response by design;
+                # the device acks asynchronously on the notify char.
+                _LOGGER.debug(
+                    "%s: write -> %s", self.device_name, payload.hex(" ")
+                )
+                await client.write_gatt_char(WRITE_CHAR_UUID, payload, response=False)
+                async with asyncio.timeout(COMMAND_TIMEOUT):
+                    raw = await reply
+            finally:
+                with contextlib.suppress(BleakError):
+                    await client.stop_notify(NOTIFY_CHAR_UUID)
+
+        try:
+            ack = CommandReply.from_bytes(raw)
+        except ValueError as err:
+            raise CommandError(f"{self.device_name}: empty reply") from err
+        if not ack.ok:
+            raise CommandError(
+                f"{self.device_name}: command rejected (status={ack.status})"
+            )
+        _LOGGER.debug(
+            "%s: command acknowledged (status=0x%02x)", self.device_name, ack.status
+        )
 
 
 class SwitchbotEntity[T](PassiveBluetoothCoordinatorEntity[SwitchbotCoordinator[T]]):
