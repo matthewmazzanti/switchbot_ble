@@ -1,0 +1,24 @@
+{
+  "domain": "switchbot",
+  "name": "SwitchBot BLE (Override)",
+  "version": "0.1.0",
+  "documentation": "https://github.com/matthewmazzanti/switchbot_ble",
+  "issue_tracker": "https://github.com/matthewmazzanti/switchbot_ble/issues",
+  "codeowners": ["@matthewmazzanti"],
+  "requirements": [],
+  "iot_class": "local_push",
+  "loggers": [
+    "custom_components.switchbot"
+  ],
+  "config_flow": true,
+  "bluetooth": [
+    {
+      "connectable": false,
+      "manufacturer_id": 2409
+    },
+    {
+      "connectable": false,
+      "service_data_uuid": "0000fd3d-0000-1000-8000-00805f9b34fb"
+    }
+  ]
+}

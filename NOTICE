@@ -1,0 +1,20 @@
+switchbot-ble
+Copyright (c) 2026 Matthew Mazzanti
+
+This project is an independent, community-developed Home Assistant integration
+for SwitchBot Bluetooth-LE devices. It is licensed under the MIT License (see
+LICENSE).
+
+Not affiliated with, authorized, endorsed, or sponsored by SwitchBot or
+Wonderlabs, Inc. "SwitchBot" and any related names, logos, and marks are the
+trademarks of their respective owners and are used here only nominatively, to
+identify the devices this software interoperates with.
+
+This software is an interoperability reimplementation. The BLE wire protocol it
+speaks (frame layouts, command bytes, advertisement fields) consists of
+functional facts about the devices, determined in order to interoperate with
+hardware the authors own. No source code, assets, or other copyrightable
+expression from any SwitchBot application is reproduced or distributed in this
+repository. Provenance comments that reference decompiled-app file names
+document where a protocol fact was observed; they are not reproductions of that
+code.

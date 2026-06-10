@@ -1,0 +1,36 @@
+[project]
+name = "switchbot"
+version = "0.1.0"
+description = "Home Assistant custom integration for SwitchBot Bluetooth-LE devices"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Matthew Mazzanti", email = "matthew.mazzanti@gmail.com" }
+]
+requires-python = ">=3.14.2"
+dependencies = [
+    "homeassistant>=2026.6.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.22,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.10",
+    "pytest",
+    # Optional HA deps that homeassistant.components.bluetooth imports eagerly.
+    # HA installs these from integration manifests at runtime; we need them so
+    # the `switchbot` package (and thus the pure proto tests) imports locally.
+    "aiousbwatcher",
+    "serialx",
+    "aioesphomeapi",
+]
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

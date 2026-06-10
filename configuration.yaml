@@ -1,0 +1,9 @@
+homeassistant:
+  name: Dev Home
+  unit_system: metric
+  time_zone: UTC
+
+logger:
+  logs:
+    # Your custom component
+    custom_components.switchbot: debug

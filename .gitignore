@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.direnv
+
+hass-state/
+
+# Local Claude state (memory/agent), except committed project skills.
+.claude/*
+!.claude/skills/
+
+# APK download / decompile working dir (tools/apk/switchbot-apk.sh).
+# Ignore the generated contents but keep the committed investigation map.
+/decomp/*
+!/decomp/CLAUDE.md
