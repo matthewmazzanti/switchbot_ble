@@ -47,9 +47,19 @@ class CommandReply:
     """The generic command acknowledgement shared by every notify reply.
 
     Per decomp (BleMsgParser), every reply leads with a status byte; the rest is
-    command-specific and decoded by per-device response types (e.g. blind_tilt's
-    PositionResponse). This captures only the universal accept/reject signal, so
-    it works for any command on any device without assuming a payload shape.
+    command-specific and decoded by per-device response types (e.g. curtain3's
+    responses.py). This captures only the universal accept/reject signal, so it
+    works for any command on any device without assuming a payload shape.
+
+    NOTE (design tension): today the typed reply parsers (responses.py) are
+    payload-only and assume an ok reply — the status gate lives in the transport
+    (core.async_command, which checks `ok` and retries on a bad status), so a
+    typed reply doesn't own its own status. The envisioned fix is a composable
+    reply base: a per-reply-type subclass whose parse() validates the status byte
+    and raises on a bad one, so the transport retry loop can call `reply.parse`
+    directly (with CommandReply becoming just the command/ack case). Deferred —
+    moving the check into proto parsers would couple them to retry/exception
+    semantics they currently stay free of.
     """
 
     status: int

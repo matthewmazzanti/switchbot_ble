@@ -164,10 +164,6 @@ async def async_command(
     raise last_err
 
 
-class _Serializable(Protocol):
-    def to_bytes(self) -> bytes: ...
-
-
 class _Reply(Protocol):
     @classmethod
     def parse(cls, data: bytes) -> Self: ...
@@ -176,22 +172,22 @@ class _Reply(Protocol):
 async def async_request[R: _Reply](
     hass: HomeAssistant,
     address: str,
-    command: _Serializable,
+    payload: bytes,
     reply: type[R],
     *,
     name: str | None = None,
 ) -> R:
-    """Send `command` and decode its reply into a typed response `R`.
+    """Send `payload` and decode its reply into a typed response `R`.
 
-    The call/respond counterpart to `async_command`: serializes a proto command
-    (`command.to_bytes()`), runs the same connect/write/await exchange, and parses
-    the raw reply via `reply.parse`. `R` rides the reply *type* — pass the class,
-    get an instance back. Pure structural typing (`_Serializable`/`_Reply`), so
-    core stays agnostic of the concrete proto classes. Coordinator-free like
-    `async_command` — e.g. the setup chain read:
-    `await async_request(hass, primary, GetChainInfo(), ChainInfoReply)`.
+    The call/respond counterpart to `async_command`: runs the same
+    connect/write/await exchange, then parses the raw reply via `reply.parse`.
+    `R` rides the reply *type* — pass the class, get an instance back. The caller
+    serializes the command itself (so it can pass `to_bytes(fw_version=…)` or any
+    other args). Coordinator-free like `async_command` — e.g. the setup chain
+    read:
+    `await async_request(hass, primary, GetChainInfo().to_bytes(), ChainInfoReply)`
     """
-    raw = await async_command(hass, address, command.to_bytes(), name=name)
+    raw = await async_command(hass, address, payload, name=name)
     return reply.parse(raw)
 
 
@@ -246,6 +242,14 @@ async def _command_once(
             with contextlib.suppress(BleakError):
                 await client.stop_notify(NOTIFY_CHAR_UUID)
 
+    # Status gate, transport-level: the status byte drives RETRY, so it's checked
+    # here in the exchange loop — generically, via CommandReply — independent of
+    # any typed payload parser. async_request layers `reply.parse` on top of the
+    # ok'd bytes, leaving the proto reply types payload-only and HA-free. The
+    # tension (a typed reply doesn't own its own status) is deliberate; the
+    # eventual fix is a composable reply base (subclass per reply type) whose
+    # parse() validates status and raises a retry-triggering error, so this loop
+    # can call reply.parse directly instead of CommandReply here. See CommandReply.
     try:
         ack = CommandReply.from_bytes(raw)
     except ValueError as err:
