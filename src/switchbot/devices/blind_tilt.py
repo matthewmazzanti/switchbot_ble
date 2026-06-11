@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
 from .. import generic_entity
-from ..core import ConnectableSwitchbotCoordinator, SwitchbotEntity
+from ..core import SwitchbotCoordinator, SwitchbotEntity
 from ..proto.blind_tilt import (
     MODERN_FW,
     BlindTiltManufacturerData,
@@ -57,7 +57,7 @@ class BlindTiltState:
         )
 
 
-class BlindTiltCoordinator(ConnectableSwitchbotCoordinator[BlindTiltState]):
+class BlindTiltCoordinator(SwitchbotCoordinator[BlindTiltState]):
     # Last-seen of each advertisement field; they arrive in separate frames.
     _last_mfr: BlindTiltManufacturerData | None
     _last_svc: BlindTiltServiceData | None
@@ -104,7 +104,7 @@ class BlindTiltCoordinator(ConnectableSwitchbotCoordinator[BlindTiltState]):
             return None
         return BlindTiltState.combine(self._last_mfr, self._last_svc)
 
-    # --- commands (connection path lives in ConnectableSwitchbotCoordinator) ---
+    # --- commands (connect/write/await exchange lives in core.async_command) ---
 
     async def async_set_position(self, position: int) -> None:
         # We don't read the device firmware, so assume modern. Reading the real

@@ -107,9 +107,11 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
 - [ ] Proto `GetChainInfo` reply parser (`pre_mac` [2..7], `next_mac` [14..19]).
       Maybe `GetCurtainInfo` parser too (pos0/batt0/pos1/batt1, link_length [3])
       even though state is advert-sourced — useful for the setup read / debugging.
-- [ ] Core: a **send-and-return-bytes** command variant. `_send_command_once`
-      already captures the notify `raw` but discards it after the status check
-      (`core.py:224`); thread it back so setup can read the chain reply.
+- [x] Core: **send-and-return-bytes** + coordinator-free exchange. Done —
+      collapsed `ConnectableSwitchbotCoordinator` into `core.async_command(hass,
+      address, payload) -> bytes` (free function; returns the raw OK-checked
+      reply) + `SwitchbotCoordinator.async_send_command` (adds the per-device
+      lock). Setup chain-read can now call `async_command` with no coordinator.
 - [ ] `verify-proto` on chain commands: `PROTOCOL.md` shows `GetChainInfo` as
       `…02 FF 01` but decomp `CmdGenerator` emits `…02 00 01` (`{2,0,1}`).
       Decomp authoritative → send `00`.

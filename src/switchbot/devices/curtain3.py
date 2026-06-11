@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
 from .. import generic_entity
-from ..core import ConnectableSwitchbotCoordinator, SwitchbotEntity
+from ..core import SwitchbotCoordinator, SwitchbotEntity
 from ..proto.core import SWITCHBOT_SERVICE
 from ..proto.curtain3 import INDEX_SINGLE, Curtain3ServiceData, SetPercentage, Stop
 
@@ -36,7 +36,7 @@ def parse_advertisement(
         return None
 
 
-class Curtain3Coordinator(ConnectableSwitchbotCoordinator[Curtain3ServiceData]):
+class Curtain3Coordinator(SwitchbotCoordinator[Curtain3ServiceData]):
     def __init__(
         self,
         hass: HomeAssistant,
@@ -65,7 +65,7 @@ class Curtain3Coordinator(ConnectableSwitchbotCoordinator[Curtain3ServiceData]):
     ) -> Curtain3ServiceData | None:
         return parse_advertisement(service_info)
 
-    # --- commands (connection path lives in ConnectableSwitchbotCoordinator) ---
+    # --- commands (connect/write/await exchange lives in core.async_command) ---
 
     async def async_set_curtain_position(self, position: int) -> None:
         """`position` is the SwitchBot position (0 = open, 100 = closed)."""
