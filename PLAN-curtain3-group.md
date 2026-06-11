@@ -134,6 +134,17 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
   re-registerable secondary callback).
 - Physical left/right auto-identification via shake.
 
+## Cleanup (post-implementation)
+
+- Move the member index constants (`INDEX_PRIMARY`/`INDEX_SECONDARY`/`INDEX_BOTH`,
+  currently in `devices/curtain3_group.py`) into `proto/` — they're wire values
+  (the command member bitmask), not HA concerns. (`INDEX_SINGLE`/`INDEX_BOTH`
+  already live in `proto/curtain3/commands.py` — consolidate.)
+- Replace ad-hoc "related state" ints with `IntEnum`s in `proto/` — member index,
+  and the response enums surfaced by the new parsers (`motion_status`,
+  `action_mode`, `threshold_type`, calibration mode, work mode, …). Gives names +
+  validation instead of bare ints.
+
 ## Sequencing (rough)
 
 1. ✅ `devices/curtain3_group.py`: `Curtain3Group` glue object (two per-member

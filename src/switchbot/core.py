@@ -2,6 +2,7 @@ import abc
 import asyncio
 import contextlib
 import logging
+from typing import Protocol, Self
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
@@ -161,6 +162,37 @@ async def async_command(
             )
     assert last_err is not None  # loop ran at least once
     raise last_err
+
+
+class _Serializable(Protocol):
+    def to_bytes(self) -> bytes: ...
+
+
+class _Reply(Protocol):
+    @classmethod
+    def parse(cls, data: bytes) -> Self: ...
+
+
+async def async_request[R: _Reply](
+    hass: HomeAssistant,
+    address: str,
+    command: _Serializable,
+    reply: type[R],
+    *,
+    name: str | None = None,
+) -> R:
+    """Send `command` and decode its reply into a typed response `R`.
+
+    The call/respond counterpart to `async_command`: serializes a proto command
+    (`command.to_bytes()`), runs the same connect/write/await exchange, and parses
+    the raw reply via `reply.parse`. `R` rides the reply *type* — pass the class,
+    get an instance back. Pure structural typing (`_Serializable`/`_Reply`), so
+    core stays agnostic of the concrete proto classes. Coordinator-free like
+    `async_command` — e.g. the setup chain read:
+    `await async_request(hass, primary, GetChainInfo(), ChainInfoReply)`.
+    """
+    raw = await async_command(hass, address, command.to_bytes(), name=name)
+    return reply.parse(raw)
 
 
 async def _command_once(
