@@ -521,15 +521,15 @@ class EnableNotify:  # 57 0E 01 ..
 @dataclass(frozen=True, slots=True)
 class SetLinkage:  # 57 0F 45 02 01 01 ..
     _HEADER: ClassVar[bytes] = ext_set(SUB_LINK, 0x01, 0x01)
-    slave_mac: bytes  # 6-byte MAC
+    secondary_mac: bytes  # 6-byte MAC of the linked secondary curtain
 
     def to_bytes(self) -> bytes:
-        return build(self._HEADER, self.slave_mac)
+        return build(self._HEADER, self.secondary_mac)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> SetLinkage:
         p = tail(cls._HEADER, data)
-        return cls(slave_mac=bytes(p[:6]))
+        return cls(secondary_mac=bytes(p[:6]))
 
 
 @dataclass(frozen=True, slots=True)

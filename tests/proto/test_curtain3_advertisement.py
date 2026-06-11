@@ -14,7 +14,7 @@ class TestCurtain3ServiceData:
     def _mk(self, **overrides) -> Curtain3ServiceData:
         base = Curtain3ServiceData(
             pair_mode=False,
-            is_master=True,
+            is_primary=True,
             calibrated=True,
             battery=80,
             position=50,
@@ -27,7 +27,7 @@ class TestCurtain3ServiceData:
         for adv in (
             self._mk(),
             self._mk(pair_mode=True, in_group=True, too_hot=True),
-            self._mk(calibrated=False, is_master=False, battery=0, position=100),
+            self._mk(calibrated=False, is_primary=False, battery=0, position=100),
         ):
             assert Curtain3ServiceData.parse(adv.to_bytes()) == adv
 
@@ -50,10 +50,10 @@ class TestCurtain3ServiceData:
 
     def test_parses_real_packet(self):
         # Real Curtain 3 service broadcast (advertising pairing form 0x5B):
-        # battery 87%, fully open, master, uncalibrated, not too hot.
+        # battery 87%, fully open, primary, uncalibrated, not too hot.
         adv = Curtain3ServiceData.parse(bytes.fromhex("5b80d7001100"))
         assert adv.pair_mode is True
-        assert adv.is_master is True
+        assert adv.is_primary is True
         assert adv.calibrated is False
         assert adv.battery == 87
         assert adv.position == 0

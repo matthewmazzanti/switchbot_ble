@@ -366,7 +366,7 @@ class TestSetDelayRoundtrip:
 
 class TestSetLinkageRoundtrip:
     def test_roundtrip(self):
-        cmd = SetLinkage(slave_mac=bytes([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]))
+        cmd = SetLinkage(secondary_mac=bytes([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]))
         assert SetLinkage.from_bytes(cmd.to_bytes()) == cmd
 
 

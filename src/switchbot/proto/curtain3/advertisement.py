@@ -23,7 +23,7 @@ class Curtain3ServiceData:
     """Service-data broadcast (UUID 0xFD3D), >= 6 bytes."""
 
     pair_mode: bool
-    is_master: bool
+    is_primary: bool  # byte 1 bit 7; the group's controllable node (was "master")
     calibrated: bool  # byte 1 bit 6; set = calibrated
     battery: int  # 0-100
     position: int  # 0-100
@@ -36,8 +36,8 @@ class Curtain3ServiceData:
         return bytes([
             # byte 0: device type; pairing bit set in normal operation
             DEVICE_TYPE | (0 if self.pair_mode else PAIRING_BIT),
-            # byte 1: is_master (bit 7), calibrated (bit 6)
-            (self.is_master << 7) | (self.calibrated << 6),
+            # byte 1: is_primary (bit 7), calibrated (bit 6)
+            (self.is_primary << 7) | (self.calibrated << 6),
             # byte 2: battery in bits 6:0
             self.battery & 0x7F,
             # byte 3: position in bits 6:0
@@ -55,7 +55,7 @@ class Curtain3ServiceData:
             raise ValueError(f"service data needs >= 6 bytes, got {len(data)}")
         return cls(
             pair_mode=is_pairing(data[0]),
-            is_master=bool(data[1] & 0x80),
+            is_primary=bool(data[1] & 0x80),
             calibrated=bool(data[1] & 0x40),
             battery=data[2] & 0x7F,
             position=data[3] & 0x7F,
