@@ -33,33 +33,38 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
   connection is needed ONLY for (a) commands, (b) the one-time chain read at
   setup. (Resolves the old state-sourcing fork — no `GetCurtainInfo` poll.)
 
-- **Coordinator can listen to two MACs (verified).** Override the PUBLIC
-  `async_start()` (not protected `_async_start`): call `super().async_start()`
-  for the primary, then `bluetooth.async_register_callback` the secondary MAC
-  (`connectable=False`, passive-only), and return a composed unsub. `self.address`
-  stays the primary, so availability + connection target are correctly keyed to
-  it. (Public-API only; no reach into `_on_stop`.)
+- **Architecture: two coordinators + a thin glue object (NOT one unified
+  coordinator).** Rather than bend the single-address passive coordinator to two
+  MACs, use two idiomatic `Curtain3Coordinator`s (one per curtain — own address,
+  own availability, own `track_unavailable`, own `data`) and a `Curtain3Group`
+  glue object that subscribes to nothing. The glue owns the three genuinely
+  group-level concerns: identity (`device_info`), the unique-id namespace, and the
+  command path. Primary is `connectable=True` (command target); secondary is
+  `connectable=False` (pure advert source — relayed to via the primary, never
+  connected to directly).
+  - *Why:* the combine has to live *somewhere* (`cover.both` needs both
+    positions); putting it in the glue/entity layer keeps each coordinator on the
+    framework's happy path. Earlier unified-coordinator approach (one coordinator,
+    dual `async_register_callback`, MAC-routing in `_parse`, gated combined state,
+    overridden availability) worked but leaned on the abstraction; replaced.
 
-- **Secondary advert drives STATE, not availability.** Its handler updates the
-  secondary slice + `async_update_listeners()`, but does NOT go through the base
-  event path (which would flip `_available`). Availability stays primary-only, so
-  a chatty secondary can't mask an unreachable primary.
+- **Per-entity availability falls out for free.** Each member's entities read
+  their own coordinator's availability, so `cover.secondary` goes unavailable when
+  *its* beacons time out while the primary/`both` stay live. No gated combined
+  state needed; the "don't publish a missing half" concern is handled per-entity.
 
-- **Coarse fan-out is accepted (v1).** `async_update_listeners()` pokes every
-  entity on every advert from either MAC; unchanged values don't emit
-  `state_changed` (HA dedups), so it's cheap. Selective per-member dispatch would
-  need the processor stack (deliberately unused) — not worth it.
+- **`device_info` is injected, not derived from the coordinator.** Entities attach
+  to a device via `device_info.identifiers`, independent of their state
+  coordinator. The glue hands every entity ONE `device_info` (primary
+  `identifiers`, BOTH MACs in `connections`), so secondary-backed entities land on
+  the same device. Needed a small `generic_entity.Sensor/BinarySensor` change:
+  optional `device_info` param (falls back to `coordinator.device_info`).
 
-- **Combined state = gated, both required (locked).** `Curtain3GroupState(primary,
-  secondary)` — both non-optional, built only once BOTH members have advertised
-  once, then last-seen of each retained (the `blind_tilt` sticky pattern). A group
-  with a missing half isn't published. Availability stays primary-keyed (base
-  path); during the brief initial window before the secondary is first heard the
-  group is `available` but `data is None` (entities read unknown), same as
-  blind_tilt. Availability is also gated on `data is not None` (overridden
-  `available`), so the group reads unavailable — not available-unknown — until
-  both members are first seen; sticky state keeps it available if the secondary
-  later goes silent.
+- **`cover.both` is the only multi-coordinator entity.** It subscribes to both
+  coordinators (override `async_added_to_hass`, add a 2nd `async_add_listener`
+  → same `_handle_coordinator_update`), is `available` only when both are, and
+  renders the averaged position. Everything else is a vanilla single-coordinator
+  entity.
 
 ## Config flow + setup (simple model)
 
@@ -126,9 +131,12 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
 
 ## Sequencing (rough)
 
-1. ✅ `devices/curtain3_group.py`: group coordinator (two-MAC subscribe + primary
-   command path, gated combined state, gated availability) + primary/secondary/
-   both covers + per-member battery & calibrated entities. Unwired so far.
+1. ✅ `devices/curtain3_group.py`: `Curtain3Group` glue object (two per-member
+   `Curtain3Coordinator`s, primary connectable / secondary advert-only) + command
+   routing + per-member covers + `cover.both` (dual-coordinator) + per-member
+   battery & calibrated entities. `generic_entity` gained an injectable
+   `device_info`; `Curtain3Coordinator` gained a `connectable` kwarg. Unwired so
+   far.
 2. Proto: chain-info reply parser + verify chain command bytes.
 3. Core: send-and-return-bytes primitive.
 4. Wiring: group construction path (entry.data {primary, secondary, is_group};

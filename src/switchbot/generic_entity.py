@@ -9,6 +9,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.helpers import device_registry
 
 from .core import SwitchbotCoordinator, SwitchbotEntity
 
@@ -21,9 +22,14 @@ class BinarySensor[T](SwitchbotEntity[T], BinarySensorEntity):  # pyright: ignor
         name: str,
         is_on_cb: ty.Callable[[T], bool],
         device_class: BinarySensorDeviceClass | None,
+        device_info: device_registry.DeviceInfo | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_device_info = coordinator.device_info
+        # `device_info` lets an entity attach to a device other than its state
+        # coordinator's (e.g. a group device fed by a per-member coordinator).
+        self._attr_device_info = (
+            device_info if device_info is not None else coordinator.device_info
+        )
         self._attr_unique_id = unique_id
         self._attr_name = name
         self._attr_device_class = device_class
@@ -47,9 +53,14 @@ class Sensor[T, V](SwitchbotEntity[T], SensorEntity):  # pyright: ignore[reportI
         native_unit_of_measurement: str | None,
         state_class: SensorStateClass | None,
         suggested_display_precision: int | None = None,
+        device_info: device_registry.DeviceInfo | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_device_info = coordinator.device_info
+        # `device_info` lets an entity attach to a device other than its state
+        # coordinator's (e.g. a group device fed by a per-member coordinator).
+        self._attr_device_info = (
+            device_info if device_info is not None else coordinator.device_info
+        )
         self._attr_unique_id = unique_id
         self._attr_name = name
         self._attr_device_class = device_class
