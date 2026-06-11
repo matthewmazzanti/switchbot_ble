@@ -43,20 +43,15 @@ class Curtain3Coordinator(SwitchbotCoordinator[Curtain3ServiceData]):
         address: str,
         name: str,
         adv: bluetooth.BluetoothServiceInfoBleak | None,
-        *,
-        connectable: bool = True,
     ) -> None:
-        # connectable=False makes a pure advert source (e.g. a group's secondary,
-        # whose commands are relayed through the primary — it's never connected
-        # to directly), so availability follows any scanner, not a connectable one.
         super().__init__(
             hass=hass,
             address=address,
             device_name=name,
             device_type="curtain3",
-            # Active scan; connectable when we issue position commands over GATT.
+            # Active scan + connectable: we issue position commands over GATT.
             mode=bluetooth.BluetoothScanningMode.ACTIVE,
-            connectable=connectable,
+            connectable=True,
             initial=parse_advertisement(adv) if adv else None,
         )
 

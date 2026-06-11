@@ -6,12 +6,18 @@ Four layers, bottom-up:
    CLAUDE.md covers conventions.)
 2. **`core.py`** — framework base on HA's *light* passive-bluetooth coordinator:
    - `SwitchbotCoordinator[T]` extends `PassiveBluetoothDataUpdateCoordinator`.
-     It owns the BLE subscription, the typed `data: T | None` state, and (per
-     subclass) the command/GATT path. Subclasses implement `_parse(service_info)
-     -> T | None` and `create_platform_entities(platform)`.
+     It owns the BLE subscription, the typed `data: T | None` state, and the
+     command/GATT path (`async_send_command`; the connect/write/await exchange
+     itself is the coordinator-free `async_command(hass, address, payload)`).
+     Subclasses implement `_parse(service_info) -> T | None`.
    - `SwitchbotEntity[T]` extends `PassiveBluetoothCoordinatorEntity`; a thin
      view that re-renders on coordinator updates. Availability comes from the
      coordinator.
+   - `SwitchbotDevice` (a `Protocol` in `platforms.py`) is what
+     `entry.runtime_data` holds — `address` + `async_start()` +
+     `create_platform_entities(platform)`. A standalone device coordinator and a
+     multi-device group glue each satisfy it structurally; a state-only member
+     coordinator does not (it authors no entities).
 3. **`devices/<model>.py`** — the per-device object (a `SwitchbotCoordinator`
    subclass): parses advertisements into a typed state, holds the command
    methods, and declares the device's entities.
@@ -21,10 +27,11 @@ Four layers, bottom-up:
 
 ## Conventions (keep these)
 
-- **Device-major authorship.** `create_platform_entities(platform)` is the
-  single source of truth for what a device exposes. Platform files stay thin
-  forwarders — never put per-device logic in them. (HA forces domain-major
-  *registration*; we keep device-major *authorship* on top.)
+- **Device-major authorship.** `create_platform_entities(platform)` (on the
+  `SwitchbotDevice` stored at `entry.runtime_data`) is the single source of truth
+  for what a device exposes. Platform files stay thin forwarders — never put
+  per-device logic in them. (HA forces domain-major *registration*; we keep
+  device-major *authorship* on top.)
 - **Typed, flat, non-optional state.** The coordinator combines its inputs into
   one flat frozen dataclass with no `None` fields, so entities read
   `data.position` / `data.battery` directly. Don't expose a loosely-typed dict.
@@ -33,7 +40,7 @@ Four layers, bottom-up:
   in separate frames), the coordinator retains the last-seen of each and only
   emits state once all required parts have been seen. Parsing of each field
   stays pure in `proto/`; combining/retention is the coordinator's job.
-- **State lives on `entry.runtime_data`** (a `ConfigEntry[SwitchbotCoordinator]`),
+- **State lives on `entry.runtime_data`** (a `ConfigEntry[SwitchbotDevice]`),
   not a global registry.
 - **Light coordinator family, not the processor stack.** We use
   `PassiveBluetoothDataUpdateCoordinator` + `PassiveBluetoothCoordinatorEntity`

@@ -1,7 +1,7 @@
 """A SwitchBot Curtain 3 *dual group* (two curtains, one window) as one HA device.
 
-Decomposition: two idiomatic single-MAC `Curtain3Coordinator`s (one per curtain)
-own the per-member state + availability, exactly as the passive-bluetooth
+Decomposition: two idiomatic single-MAC `_Curtain3Member` coordinators (one per
+curtain) own the per-member state + availability, exactly as the passive-bluetooth
 coordinator is designed for. A thin `Curtain3Group` glue object — NOT a
 coordinator, it subscribes to nothing — supplies the group-level concerns the
 coordinators can't: the shared device identity (`device_info`), the unique-id
@@ -26,15 +26,49 @@ from homeassistant.helpers import device_registry
 from homeassistant.helpers.entity import Entity
 
 from .. import generic_entity
-from ..core import DOMAIN, SwitchbotEntity, normalize_mac
+from ..core import DOMAIN, SwitchbotCoordinator, SwitchbotEntity, normalize_mac
 from ..proto.curtain3 import Curtain3ServiceData, SetPercentage, Stop
-from .curtain3 import Curtain3Coordinator
+from .curtain3 import parse_advertisement
 
 # Command member bitmask (decomp: LEFT=1, RIGHT=2, both=3). Primary is member 0
 # (bit 0), secondary member 1 (bit 1).
 INDEX_PRIMARY = 1
 INDEX_SECONDARY = 2
 INDEX_BOTH = 3
+
+
+class _Curtain3Member(SwitchbotCoordinator[Curtain3ServiceData]):
+    """One curtain in a group: a pure per-MAC advert state source.
+
+    Unlike the standalone `Curtain3Coordinator` it authors no entities and has no
+    command methods — the group owns the device identity, the entities, and the
+    command path (relayed through the primary). `connectable` is per-member: the
+    primary is the connectable command target, the secondary is advert-only.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        address: str,
+        name: str,
+        adv: bluetooth.BluetoothServiceInfoBleak | None,
+        *,
+        connectable: bool,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            address=address,
+            device_name=name,
+            device_type="curtain3",
+            mode=bluetooth.BluetoothScanningMode.ACTIVE,
+            connectable=connectable,
+            initial=parse_advertisement(adv) if adv else None,
+        )
+
+    def _parse(
+        self, service_info: bluetooth.BluetoothServiceInfoBleak
+    ) -> Curtain3ServiceData | None:
+        return parse_advertisement(service_info)
 
 
 class Curtain3Group:
@@ -58,10 +92,10 @@ class Curtain3Group:
         self.address = normalize_mac(primary)
         self._secondary_address = normalize_mac(secondary)
         # Primary is the connectable command target; secondary is advert-only.
-        self._primary = Curtain3Coordinator(
-            hass, primary, name, adv or last(hass, self.address)
+        self._primary = _Curtain3Member(
+            hass, primary, name, adv or last(hass, self.address), connectable=True
         )
-        self._secondary = Curtain3Coordinator(
+        self._secondary = _Curtain3Member(
             hass,
             secondary,
             name,
@@ -139,7 +173,7 @@ class Curtain3Group:
                 return []
 
     def _battery(
-        self, coordinator: Curtain3Coordinator, suffix: str, label: str
+        self, coordinator: _Curtain3Member, suffix: str, label: str
     ) -> Entity:
         return generic_entity.Sensor(
             coordinator=coordinator,
@@ -153,7 +187,7 @@ class Curtain3Group:
         )
 
     def _calibrated(
-        self, coordinator: Curtain3Coordinator, suffix: str, label: str
+        self, coordinator: _Curtain3Member, suffix: str, label: str
     ) -> Entity:
         return generic_entity.BinarySensor(
             coordinator=coordinator,
@@ -184,7 +218,7 @@ class _Curtain3GroupCover(SwitchbotEntity[Curtain3ServiceData], CoverEntity):  #
     def __init__(
         self,
         group: Curtain3Group,
-        coordinator: Curtain3Coordinator,
+        coordinator: _Curtain3Member,
         index: int,
         suffix: str,
         label: str,

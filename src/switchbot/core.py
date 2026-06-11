@@ -14,7 +14,6 @@ from homeassistant.components.bluetooth.passive_update_coordinator import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry
-from homeassistant.helpers.entity import Entity
 
 from .proto.core import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID, CommandReply
 
@@ -106,12 +105,6 @@ class SwitchbotCoordinator[T](PassiveBluetoothDataUpdateCoordinator, abc.ABC):
             return await async_command(
                 self.hass, self.address, payload, name=self.device_name
             )
-
-    @abc.abstractmethod
-    def create_platform_entities(self, platform: str) -> list[Entity]:
-        """Device-major entity definition: the one place that says what this
-        device exposes, per platform. Thin platform files forward here."""
-        raise NotImplementedError
 
 
 async def async_command(

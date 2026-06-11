@@ -4,16 +4,16 @@ from dataclasses import dataclass
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
 
-from ..core import SwitchbotCoordinator
+from ..platforms import SwitchbotDevice
 from ..proto import DeviceType
 from .blind_tilt import BlindTiltCoordinator
 from .curtain3 import Curtain3Coordinator
 from .leak import LeakCoordinator
 
-# (hass, address, name, last-seen advertisement) -> coordinator
+# (hass, address, name, last-seen advertisement) -> the device's runtime object
 CoordinatorFactory = Callable[
     [HomeAssistant, str, str, bluetooth.BluetoothServiceInfoBleak | None],
-    SwitchbotCoordinator,
+    SwitchbotDevice,
 ]
 
 
@@ -45,7 +45,7 @@ def build_coordinator(
     address: str,
     name: str,
     adv: bluetooth.BluetoothServiceInfoBleak | None,
-) -> SwitchbotCoordinator:
+) -> SwitchbotDevice:
     entry = _BY_DEVICE_TYPE.get(device_type)
     if entry is None:
         raise ValueError(device_type)

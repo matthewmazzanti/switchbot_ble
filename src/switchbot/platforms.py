@@ -1,16 +1,31 @@
 import logging
+from typing import Protocol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-
-from .core import SwitchbotCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# The coordinator (per-device object) is stored on the config entry itself;
-# no global registry needed.
-type SwitchbotConfigEntry = ConfigEntry[SwitchbotCoordinator]
+
+class SwitchbotDevice(Protocol):
+    """The per-config-entry runtime object stored on `entry.runtime_data` — a
+    standalone device coordinator or a multi-device group. It owns the entry's
+    BLE subscription lifecycle and authors its entities. Decoupled from
+    `SwitchbotCoordinator` so a group (which is not a coordinator) and a member
+    coordinator (which authors no entities) each fit only the role they play.
+    """
+
+    address: str
+
+    def async_start(self) -> CALLBACK_TYPE: ...
+
+    def create_platform_entities(self, platform: str) -> list[Entity]: ...
+
+
+# The device object is stored on the config entry itself; no global registry.
+type SwitchbotConfigEntry = ConfigEntry[SwitchbotDevice]
 
 
 def platform_setup_entry_factory(platform: str):
