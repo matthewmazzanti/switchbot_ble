@@ -53,7 +53,7 @@ class CommandReply:
 
     NOTE (design tension): today the typed reply parsers (responses.py) are
     payload-only and assume an ok reply — the status gate lives in the transport
-    (core.async_command, which checks `ok` and retries on a bad status), so a
+    (core.async_request, which checks `ok` and retries on a bad status), so a
     typed reply doesn't own its own status. The envisioned fix is a composable
     reply base: a per-reply-type subclass whose parse() validates the status byte
     and raises on a bad one, so the transport retry loop can call `reply.parse`
@@ -72,7 +72,9 @@ class CommandReply:
         return bytes([self.status])
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> Self:
+    def parse(cls, data: bytes) -> Self:
+        # `parse` (not `from_bytes`): the reply convention — commands roundtrip
+        # via from_bytes/to_bytes, replies decode via parse (see responses.py).
         if not data:
             raise ValueError("empty command reply")
         return cls(status=data[0])

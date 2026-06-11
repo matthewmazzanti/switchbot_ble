@@ -104,7 +104,7 @@ class BlindTiltCoordinator(SwitchbotCoordinator[BlindTiltState]):
             return None
         return BlindTiltState.combine(self._last_mfr, self._last_svc)
 
-    # --- commands (connect/write/await exchange lives in core.async_command) ---
+    # --- commands (connect/write/await exchange lives in core.async_request) ---
 
     async def async_set_position(self, position: int) -> None:
         # We don't read the device firmware, so assume modern. Reading the real

@@ -96,36 +96,49 @@ class SwitchbotCoordinator[T](PassiveBluetoothDataUpdateCoordinator, abc.ABC):
         # super() flips _available True and fans out to entity listeners.
         super()._async_handle_bluetooth_event(service_info, change)
 
-    async def async_send_command(self, payload: bytes) -> bytes:
-        """Send a GATT command (or read) and return the device's raw reply.
+    async def async_send_command(self, payload: bytes) -> CommandReply:
+        """Send a GATT command and return its acknowledgement.
 
         Serializes on the per-device lock so we never open two overlapping
-        connections to one device; the connect/write/await/retry exchange is the
-        coordinator-free `async_command`."""
+        connections to one device. This is the command/ack case of
+        `async_request` (reply = CommandReply); for a typed read, call
+        `async_request` directly with the reply type."""
         async with self._ble_lock:
-            return await async_command(
-                self.hass, self.address, payload, name=self.device_name
+            return await async_request(
+                self.hass, self.address, payload, CommandReply, name=self.device_name
             )
 
 
-async def async_command(
+class _Reply(Protocol):
+    @classmethod
+    def parse(cls, data: bytes) -> Self: ...
+
+
+async def async_request[R: _Reply](
     hass: HomeAssistant,
     address: str,
     payload: bytes,
+    reply: type[R],
     *,
     name: str | None = None,
-) -> bytes:
-    """Connect to `address`, write `payload`, await the device's reply, and return
-    it (raw bytes, status byte already OK-checked) — retrying the whole exchange.
+) -> R:
+    """Connect to `address`, write `payload`, await the reply, and decode it into
+    the typed response `R` — retrying the whole exchange on failure.
 
-    Coordinator-free, so the config-flow/setup path can issue a read before any
-    coordinator exists. Commands from a coordinator go through
-    `SwitchbotCoordinator.async_send_command`, which wraps this in the per-device
-    lock so two callers never open overlapping connections to one device.
+    The single command/read primitive. `R` rides the reply *type* (pass the
+    class, get an instance back). The status byte is gated generically inside the
+    retry loop (`_require_ok`), so a busy/error status retries; `reply.parse`
+    then decodes the payload of an ok'd reply. The caller serializes the command,
+    so it can pass `to_bytes(fw_version=…)` or other args. Coordinator-free, so
+    the config-flow/setup path can read before any coordinator exists, e.g. the
+    chain read:
+    `await async_request(hass, primary, GetChainInfo().to_bytes(), ChainInfoReply)`;
+    coordinator commands go through `async_send_command`, which adds the
+    per-device lock. For a plain command, pass `CommandReply` as the reply type.
 
     The await is what makes a command reliable: a write-without-response that's
-    silently dropped (e.g. a busy ESPHome proxy) surfaces here as a timeout and
-    gets retried, instead of vanishing.
+    silently dropped (e.g. a busy ESPHome proxy) surfaces as a timeout and gets
+    retried, instead of vanishing.
 
     TODO (maybe): we connect + disconnect per command. A live trace showed the
     actual write->notify exchange is ~16ms; the seconds of latency are all
@@ -150,7 +163,9 @@ async def async_command(
     last_err: Exception | None = None
     for attempt in range(1, COMMAND_ATTEMPTS + 1):
         try:
-            return await _command_once(hass, address, payload, name)
+            raw = await _exchange(hass, address, payload, name)
+            _require_ok(raw, name)
+            return reply.parse(raw)
         except (CommandError, BleakError, TimeoutError) as err:
             last_err = err
             _LOGGER.debug(
@@ -164,34 +179,27 @@ async def async_command(
     raise last_err
 
 
-class _Reply(Protocol):
-    @classmethod
-    def parse(cls, data: bytes) -> Self: ...
+def _require_ok(raw: bytes, name: str) -> None:
+    """Status gate, transport-level: raise CommandError on an empty or non-OK
+    reply so the retry loop re-attempts.
 
-
-async def async_request[R: _Reply](
-    hass: HomeAssistant,
-    address: str,
-    payload: bytes,
-    reply: type[R],
-    *,
-    name: str | None = None,
-) -> R:
-    """Send `payload` and decode its reply into a typed response `R`.
-
-    The call/respond counterpart to `async_command`: runs the same
-    connect/write/await exchange, then parses the raw reply via `reply.parse`.
-    `R` rides the reply *type* — pass the class, get an instance back. The caller
-    serializes the command itself (so it can pass `to_bytes(fw_version=…)` or any
-    other args). Coordinator-free like `async_command` — e.g. the setup chain
-    read:
-    `await async_request(hass, primary, GetChainInfo().to_bytes(), ChainInfoReply)`
+    The status byte drives RETRY, so it's checked here generically via
+    CommandReply — independent of any typed payload parser, which stays
+    payload-only and HA-free. The tension (a typed reply doesn't own its own
+    status) is deliberate; the eventual fix is a composable reply base whose
+    parse() validates status and raises, letting the loop call reply.parse
+    directly. See CommandReply.
     """
-    raw = await async_command(hass, address, payload, name=name)
-    return reply.parse(raw)
+    try:
+        ack = CommandReply.parse(raw)
+    except ValueError as err:
+        raise CommandError(f"{name}: empty reply") from err
+    if not ack.ok:
+        raise CommandError(f"{name}: command rejected (status={ack.status})")
+    _LOGGER.debug("%s: reply ok (status=0x%02x)", name, ack.status)
 
 
-async def _command_once(
+async def _exchange(
     hass: HomeAssistant, address: str, payload: bytes, name: str
 ) -> bytes:
     ble_device = bluetooth.async_ble_device_from_address(
@@ -242,21 +250,7 @@ async def _command_once(
             with contextlib.suppress(BleakError):
                 await client.stop_notify(NOTIFY_CHAR_UUID)
 
-    # Status gate, transport-level: the status byte drives RETRY, so it's checked
-    # here in the exchange loop — generically, via CommandReply — independent of
-    # any typed payload parser. async_request layers `reply.parse` on top of the
-    # ok'd bytes, leaving the proto reply types payload-only and HA-free. The
-    # tension (a typed reply doesn't own its own status) is deliberate; the
-    # eventual fix is a composable reply base (subclass per reply type) whose
-    # parse() validates status and raises a retry-triggering error, so this loop
-    # can call reply.parse directly instead of CommandReply here. See CommandReply.
-    try:
-        ack = CommandReply.from_bytes(raw)
-    except ValueError as err:
-        raise CommandError(f"{name}: empty reply") from err
-    if not ack.ok:
-        raise CommandError(f"{name}: command rejected (status={ack.status})")
-    _LOGGER.debug("%s: command acknowledged (status=0x%02x)", name, ack.status)
+    # Raw reply; the status gate (_require_ok) runs in async_request's retry loop.
     return raw
 
 

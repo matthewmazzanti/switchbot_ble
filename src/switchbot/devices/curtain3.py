@@ -60,7 +60,7 @@ class Curtain3Coordinator(SwitchbotCoordinator[Curtain3ServiceData]):
     ) -> Curtain3ServiceData | None:
         return parse_advertisement(service_info)
 
-    # --- commands (connect/write/await exchange lives in core.async_command) ---
+    # --- commands (connect/write/await exchange lives in core.async_request) ---
 
     async def async_set_curtain_position(self, position: int) -> None:
         """`position` is the SwitchBot position (0 = open, 100 = closed)."""
