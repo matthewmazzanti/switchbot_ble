@@ -145,6 +145,14 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
 - [ ] Remaining `IntEnum`s for the response "related state" ints surfaced by the
   parsers (`motion_status`, `action_mode`, `threshold_type`, cali mode, work
   mode, …) — give names + validation instead of bare ints.
+- [ ] Rethink the device registry (`devices/__init__.py`: `REGISTRY` + the
+  `DeviceEntry` dataclass, now carrying `coordinator` factory + optional
+  `discovery` hook). Consider replacing the dict/dataclass with a **function-based
+  dispatch** — match on the type byte / advert and inject the per-device logic
+  (construction, discovery filter, future per-device setup hooks) inline, rather
+  than threading everything through a growing dataclass. Open question: how to
+  cleanly carry/return the per-device "entry" metadata (device_type string,
+  default name) a function approach still needs.
 
 ## Sequencing (rough)
 

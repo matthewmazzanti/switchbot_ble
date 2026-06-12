@@ -32,6 +32,11 @@ class DeviceEntry:
 
 # Single source of truth for supported devices, keyed by the proto model-identity
 # (`DeviceType`, i.e. the type byte with reserved + pairing bits masked off).
+# TODO(rethink): as DeviceEntry grows (factory + discovery hook + future setup
+# hooks), weigh replacing this dict/dataclass with a function-based dispatch that
+# matches on the type byte and injects per-device logic inline — the open
+# question is cleanly carrying the per-device metadata (device_type, name). See
+# PLAN-curtain3-group.md "Cleanup".
 REGISTRY: dict[int, DeviceEntry] = {
     DeviceType.BLIND_TILT: DeviceEntry(
         "blind_tilt", "Blind Tilt", BlindTiltCoordinator
