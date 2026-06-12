@@ -1,4 +1,3 @@
-import dataclasses as dc
 import logging
 import typing as ty
 
@@ -13,21 +12,6 @@ from .devices import REGISTRY
 from .proto.core import SWITCHBOT_SERVICE, device_type
 
 _LOGGER = logging.getLogger(__name__)
-
-
-@dc.dataclass
-class DeviceMetadata:
-    device_type: str
-    name: str
-
-    @classmethod
-    def from_svc(cls, svc: bytes) -> ty.Self | None:
-        # Identify the model from the service-data type byte (reserved + pairing
-        # bits masked off), via the device registry.
-        entry = REGISTRY.get(device_type(svc[0]))
-        if entry is None:
-            return None
-        return cls(device_type=entry.device_type, name=entry.name)
 
 
 class SwitchbotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -58,20 +42,32 @@ class SwitchbotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         _LOGGER.debug(discovery_info)
 
-        # Only allow supported models. Device id is lower 7 bits of first byte
-        metadata = DeviceMetadata.from_svc(svc)
-        if metadata is None:
+        # Identify the model from the service-data type byte (reserved + pairing
+        # bits masked off), via the device registry.
+        entry = REGISTRY.get(device_type(svc[0]))
+        if entry is None:
             return self.async_abort(reason="unsupported_device")
+
+        # Per-device discovery filter (advert-only): may reject this device (e.g.
+        # a Curtain 3 secondary, not independently addable) or return extra
+        # entry.data to store (e.g. is_group for a group primary).
+        extra: dict[str, ty.Any] = {}
+        if entry.discovery is not None:
+            result = entry.discovery(svc)
+            if result is None:
+                return self.async_abort(reason="not_addable")
+            extra = result
 
         # Name in the "add device" card
         self.context["title_placeholders"] = {
-            "name": f"SwitchBot {metadata.name}: {mac}",
+            "name": f"SwitchBot {entry.name}: {mac}",
         }
 
         # Stash discovered info for confirm step
         self._discovered = {
             CONF_ADDRESS: mac,
-            CONF_DEVICE_TYPE: metadata.device_type,
+            CONF_DEVICE_TYPE: entry.device_type,
+            **extra,
         }
 
         return await self.async_step_confirm()

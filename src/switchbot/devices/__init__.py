@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
@@ -8,6 +9,7 @@ from ..platforms import SwitchbotDevice
 from ..proto import DeviceType
 from .blind_tilt import BlindTiltCoordinator
 from .curtain3 import Curtain3Coordinator
+from .curtain3 import discovery as curtain3_discovery
 from .leak import LeakCoordinator
 
 # (hass, address, name, last-seen advertisement) -> the device's runtime object
@@ -15,6 +17,9 @@ CoordinatorFactory = Callable[
     [HomeAssistant, str, str, bluetooth.BluetoothServiceInfoBleak | None],
     SwitchbotDevice,
 ]
+# Optional per-device config-flow filter. Given the service-data bytes, returns
+# extra entry.data to store, or None to reject the discovery (not addable).
+DiscoveryHook = Callable[[bytes], dict[str, Any] | None]
 
 
 @dataclass(frozen=True)
@@ -22,6 +27,7 @@ class DeviceEntry:
     device_type: str  # config-entry key
     name: str  # default display name
     coordinator: CoordinatorFactory
+    discovery: DiscoveryHook | None = None
 
 
 # Single source of truth for supported devices, keyed by the proto model-identity
@@ -30,7 +36,9 @@ REGISTRY: dict[int, DeviceEntry] = {
     DeviceType.BLIND_TILT: DeviceEntry(
         "blind_tilt", "Blind Tilt", BlindTiltCoordinator
     ),
-    DeviceType.CURTAIN3: DeviceEntry("curtain3", "Curtain 3", Curtain3Coordinator),
+    DeviceType.CURTAIN3: DeviceEntry(
+        "curtain3", "Curtain 3", Curtain3Coordinator, curtain3_discovery
+    ),
     DeviceType.LEAK: DeviceEntry("leak", "Water Leak Detector", LeakCoordinator),
 }
 
