@@ -8,8 +8,8 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 
 from .core import CONF_DEVICE_TYPE, DOMAIN
-from .devices import REGISTRY
-from .proto.core import SWITCHBOT_SERVICE, device_type
+from .devices import discovered
+from .proto.core import SWITCHBOT_SERVICE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,32 +42,23 @@ class SwitchbotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         _LOGGER.debug(discovery_info)
 
-        # Identify the model from the service-data type byte (reserved + pairing
-        # bits masked off), via the device registry.
-        entry = REGISTRY.get(device_type(svc[0]))
-        if entry is None:
+        # Identify the model from the service-data type byte and check it's
+        # addable (advert-only): unsupported models and Curtain 3 secondaries
+        # (reached through their primary) are rejected.
+        result = discovered(svc)
+        if result is None:
             return self.async_abort(reason="unsupported_device")
-
-        # Per-device discovery filter (advert-only): may reject this device (e.g.
-        # a Curtain 3 secondary, not independently addable) or return extra
-        # entry.data to store (e.g. is_group for a group primary).
-        extra: dict[str, ty.Any] = {}
-        if entry.discovery is not None:
-            result = entry.discovery(svc)
-            if result is None:
-                return self.async_abort(reason="not_addable")
-            extra = result
+        dt, model_name = result
 
         # Name in the "add device" card
         self.context["title_placeholders"] = {
-            "name": f"SwitchBot {entry.name}: {mac}",
+            "name": f"SwitchBot {model_name}: {mac}",
         }
 
-        # Stash discovered info for confirm step
+        # Stash discovered info for confirm step (DeviceType persisted as its int).
         self._discovered = {
             CONF_ADDRESS: mac,
-            CONF_DEVICE_TYPE: entry.device_type,
-            **extra,
+            CONF_DEVICE_TYPE: int(dt),
         }
 
         return await self.async_step_confirm()

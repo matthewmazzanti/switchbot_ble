@@ -66,33 +66,29 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
   renders the averaged position. Everything else is a vanilla single-coordinator
   entity.
 
-## Config flow + setup (simple model)
+## Config flow + setup (decision deferred to setup)
 
-- **Config flow = advert-only, no connect.** Discovery only offers **primaries**
-  (`is_primary=True`); secondaries (`is_primary=False`) never appear in the
-  picker. On add, store just `{primary_mac, is_group=in_group}` in `entry.data`.
-  After the user picks, branch on `in_group`: False → standalone single-cover
-  device; True → group device.
-- **Setup does the connect.** `async_setup_entry` is async; for a group it reads
-  the chain once to learn the secondary:
-  ```
-  async_setup_entry(entry):                 # entry.data = {primary_mac, is_group}
-      if is_group:
-          try: secondary_mac = (await read_chain_info(primary_mac)).next_mac
-          except BleError: raise ConfigEntryNotReady   # HA retries w/ backoff
-          coordinator = GroupCoordinator(primary_mac, secondary_mac)
-      else:
-          coordinator = Curtain3Coordinator(primary_mac)   # standalone
-      entry.runtime_data = coordinator
-      entry.async_on_unload(coordinator.async_start())
-      await async_forward_entry_setups(entry, PLATFORMS)
-  ```
-  Re-reads the chain every setup (restart/reload) = "re-interview on startup",
-  done as ordinary setup. No persistent cache, no drift detector, no
-  re-registerable callback.
-- **Accepted tradeoffs:** runtime re-grouping is picked up on next reload/restart
-  (not live); every startup needs the primary reachable before the group works
-  (mitigated by `ConfigEntryNotReady` retry).
+- **Dispatch = two `match`es over `DeviceType`** (`devices/__init__.py`), no
+  registry: `discovered(svc)` (config flow) and `build_device(...)` (setup), each
+  delegating to per-device logic. `entry.data` persists the `DeviceType` value
+  (int) + address + name.
+- **Config flow = advert-only, no connect.** `discovered` rejects unsupported
+  models and **Curtain 3 secondaries** (`is_primary=False` → reached through the
+  primary, not its own entry). It does NOT decide group-vs-standalone — that's
+  deferred to setup. (`is_group` / `CONF_IS_GROUP` removed.)
+- **Setup interviews, every time.** `curtain3.build` runs the chain read fresh on
+  every setup (`resolve_secondary` → `GetChainInfo.next_mac`): a real MAC ⇒
+  group (build `Curtain3Group`), empty (`EMPTY_MAC`) ⇒ standalone. One read
+  decides *both* "is it a group?" and the secondary MAC. Raises
+  `ConfigEntryNotReady` on BLE failure → HA retries with backoff.
+  - *Why interview always:* a group must connect for the secondary regardless, so
+    a passive advert pre-check only saved a connect for standalones — not worth a
+    second code path or relying on advert freshness. The interview is the single
+    source of truth.
+- **Accepted tradeoffs:** standalone curtains now connect once at setup too (were
+  connection-free) → need to be reachable (mitigated by `ConfigEntryNotReady`
+  retry); ~2s connect latency per setup. Runtime re-grouping is picked up on the
+  next reload/restart (not live).
 
 ## Open design questions (runtime layout — interrogating next)
 
@@ -118,13 +114,11 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
       decomp `CmdGenerator` + the workflow agents) — proto's `GetChainInfo` is
       already correct; only the `PROTOCOL.md` doc had the stale `FF`. Fix that doc
       line when next touching docs.
-- [ ] **Wiring gap:** a group is NOT its own `DeviceType` (both members are
-      `CURTAIN3`), so the registry/`build_coordinator` path (keyed on
-      `device_type`) and the `(hass, address, name, adv)` factory signature don't
-      fit — no slot for `secondary_mac`, no group/standalone discriminator. Need
-      a group construction path: `entry.data` carries `{primary, secondary,
-      is_group}`; setup branches on `is_group` and constructs the group
-      coordinator directly (outside the DeviceType registry).
+- [x] **Wiring gap (resolved):** a group is NOT its own `DeviceType`, so it can't
+      be a registry row. Resolved by dropping the registry for `match`-over-
+      `DeviceType` dispatch — `curtain3.build` (the CURTAIN3 case) interviews the
+      chain and constructs a group or standalone itself, no group discriminator
+      needed in the entry.
 
 ## Deferred (NOT v1)
 
@@ -145,14 +139,11 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
 - [ ] Remaining `IntEnum`s for the response "related state" ints surfaced by the
   parsers (`motion_status`, `action_mode`, `threshold_type`, cali mode, work
   mode, …) — give names + validation instead of bare ints.
-- [ ] Rethink the device registry (`devices/__init__.py`: `REGISTRY` + the
-  `DeviceEntry` dataclass, now carrying `coordinator` factory + optional
-  `discovery` hook). Consider replacing the dict/dataclass with a **function-based
-  dispatch** — match on the type byte / advert and inject the per-device logic
-  (construction, discovery filter, future per-device setup hooks) inline, rather
-  than threading everything through a growing dataclass. Open question: how to
-  cleanly carry/return the per-device "entry" metadata (device_type string,
-  default name) a function approach still needs.
+- [x] Device registry reworked → `match`-over-`DeviceType` dispatch (`discovered`
+  + `build_device` in `devices/__init__.py`), delegating to per-device logic.
+  `REGISTRY`/`DeviceEntry`/`build_coordinator` removed; the entry persists the
+  `DeviceType` value (int), and the per-device "metadata" (card name) is inlined
+  in the `discovered` match. Cost: the device list lives in two matches.
 
 ## Sequencing (rough)
 
@@ -162,9 +153,10 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
    battery & calibrated entities. `generic_entity` gained an injectable
    `device_info`; `Curtain3Coordinator` gained a `connectable` kwarg. Unwired so
    far.
-2. Proto: chain-info reply parser + verify chain command bytes.
-3. Core: send-and-return-bytes primitive.
-4. Wiring: group construction path (entry.data {primary, secondary, is_group};
-   setup branches on is_group; not DeviceType-keyed).
-5. Config flow: primaries-only discovery → advert-only add; setup chain read.
+2. ✅ Proto: full reply parsers + verified chain command bytes.
+3. ✅ Core: `async_request`/`async_send_command` (typed call/respond primitive).
+4. ✅ Wiring: `match`-over-`DeviceType` dispatch (`discovered` + `build_device`);
+   `curtain3.build` interviews the chain at setup → group vs standalone.
+5. ✅ Config flow: primaries-only `discovered`, advert-only add (DeviceType in
+   entry.data); group/standalone decision deferred to the setup interview.
 6. Tests + run against the real pair (F8:58.. primary / DE:8B.. secondary).

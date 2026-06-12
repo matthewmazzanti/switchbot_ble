@@ -322,17 +322,18 @@ def _format_mac(raw: bytes) -> str:
     return ":".join(f"{b:02X}" for b in raw)
 
 
-async def build_group(
-    hass: HomeAssistant,
-    primary: str,
-    name: str,
-    adv: bluetooth.BluetoothServiceInfoBleak | None,
-) -> Curtain3Group:
-    """Build a `Curtain3Group`, discovering the secondary from the chain.
+# A chain reply with no linked neighbour (decomp's EMPTY_MAC) — all zeros, with
+# all-FF treated as empty too for safety.
+_EMPTY_MACS = (bytes(6), b"\xff" * 6)
 
-    Connects to the primary once and reads GetChainInfo — the secondary is its
-    `next_mac`. Raises `ConfigEntryNotReady` on BLE failure so setup retries with
-    backoff (the curtain may just be briefly unreachable).
+
+async def resolve_secondary(hass: HomeAssistant, primary: str, name: str) -> str | None:
+    """Interview the curtain's chain; return the secondary's MAC, or None if it's
+    a standalone curtain (no linked neighbour).
+
+    Connects to the primary once and reads GetChainInfo — `next_mac` is the
+    secondary, or empty for a lone curtain. Raises `ConfigEntryNotReady` on BLE
+    failure so setup retries with backoff (the curtain may be briefly asleep).
     """
     try:
         reply = await async_request(
@@ -340,6 +341,8 @@ async def build_group(
         )
     except (CommandError, BleakError, TimeoutError) as err:
         raise ConfigEntryNotReady(
-            f"Curtain 3 group {primary}: chain read failed: {err}"
+            f"Curtain 3 {primary}: chain read failed: {err}"
         ) from err
-    return Curtain3Group(hass, primary, _format_mac(reply.next_mac), name, adv)
+    if reply.next_mac in _EMPTY_MACS:
+        return None
+    return _format_mac(reply.next_mac)

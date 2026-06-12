@@ -4,8 +4,8 @@ from homeassistant.components import bluetooth
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.core import HomeAssistant
 
-from .core import CONF_DEVICE_TYPE, CONF_IS_GROUP
-from .devices import build_coordinator
+from .core import CONF_DEVICE_TYPE
+from .devices import build_device
 from .platforms import SwitchbotConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -15,16 +15,15 @@ PLATFORMS = ["sensor", "binary_sensor", "cover"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: SwitchbotConfigEntry) -> bool:
     address = str(entry.data[CONF_ADDRESS])
-    # build_coordinator owns the dispatch: a group connects to read the chain
-    # (raising ConfigEntryNotReady on failure → HA retries); a standalone device
-    # is built from the registry.
-    device = await build_coordinator(
+    # build_device dispatches on DeviceType: Curtain 3 interviews the chain
+    # (raising ConfigEntryNotReady on BLE failure → HA retries); others construct
+    # directly.
+    device = await build_device(
         hass,
-        device_type=str(entry.data[CONF_DEVICE_TYPE]),
+        device_type=int(entry.data[CONF_DEVICE_TYPE]),
         address=address,
         name=str(entry.data[CONF_NAME]),
         adv=bluetooth.async_last_service_info(hass, address),
-        is_group=bool(entry.data.get(CONF_IS_GROUP)),
     )
 
     entry.runtime_data = device

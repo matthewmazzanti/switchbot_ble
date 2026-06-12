@@ -46,11 +46,14 @@ Four layers, bottom-up:
   `PassiveBluetoothDataUpdateCoordinator` + `PassiveBluetoothCoordinatorEntity`
   — NOT `PassiveBluetoothProcessorCoordinator` and its entity-key/descriptor
   dicts.
-- **Single device registry.** `devices/__init__.py` holds a `REGISTRY` keyed by
-  each proto module's `DEVICE_TYPE` (model identity) → `DeviceEntry(device_type,
-  name, coordinator)`. Both `build_coordinator` and `config_flow` derive from
-  it, so registering a device (or a variant sharing a coordinator) is one entry
-  — don't hardcode type bytes in the config flow.
+- **Device dispatch = two `match`es over `DeviceType`.** `devices/__init__.py`
+  has `discovered(svc)` (config-flow side: identity + addability + card name) and
+  `build_device(...)` (setup side: construct the runtime device), each a `match`
+  over the proto type-byte identity that delegates to per-device logic (e.g.
+  `curtain3.build` interviews the chain to pick group vs standalone). The config
+  entry persists the `DeviceType` value (an int); setup matches on it. Adding a
+  device touches both matches — they fan out to the device module rather than
+  forcing every device into a uniform registry row.
 
 ## Adding a device
 

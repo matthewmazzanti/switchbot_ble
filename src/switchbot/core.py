@@ -22,10 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "switchbot"
 
-CONF_DEVICE_TYPE = "device_type"
-# entry.data flag: this curtain is the primary of a dual group (set at discovery
-# from the advert's in_group). Setup branches on it to build a group vs single.
-CONF_IS_GROUP = "is_group"
+CONF_DEVICE_TYPE = "device_type"  # entry.data: the proto DeviceType value (int)
 
 # Command path tuning. The device replies on the notify char after acting on a
 # command; we await that reply (confirming delivery) and retry the whole
