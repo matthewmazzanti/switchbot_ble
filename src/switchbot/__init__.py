@@ -4,7 +4,7 @@ from homeassistant.components import bluetooth
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.core import HomeAssistant
 
-from .core import CONF_DEVICE_TYPE
+from .core import CONF_DEVICE_TYPE, CONF_IS_GROUP
 from .devices import build_coordinator
 from .platforms import SwitchbotConfigEntry
 
@@ -15,19 +15,21 @@ PLATFORMS = ["sensor", "binary_sensor", "cover"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: SwitchbotConfigEntry) -> bool:
     address = str(entry.data[CONF_ADDRESS])
-    name = str(entry.data[CONF_NAME])
-    device_type = str(entry.data[CONF_DEVICE_TYPE])
-
-    coordinator = build_coordinator(
-        hass=hass,
-        device_type=device_type,
+    # build_coordinator owns the dispatch: a group connects to read the chain
+    # (raising ConfigEntryNotReady on failure → HA retries); a standalone device
+    # is built from the registry.
+    device = await build_coordinator(
+        hass,
+        device_type=str(entry.data[CONF_DEVICE_TYPE]),
         address=address,
-        name=name,
+        name=str(entry.data[CONF_NAME]),
         adv=bluetooth.async_last_service_info(hass, address),
+        is_group=bool(entry.data.get(CONF_IS_GROUP)),
     )
-    entry.runtime_data = coordinator
+
+    entry.runtime_data = device
     # Begin advertisement tracking; unsub on unload.
-    entry.async_on_unload(coordinator.async_start())
+    entry.async_on_unload(device.async_start())
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _LOGGER.debug("Loaded entry %s", entry.entry_id)

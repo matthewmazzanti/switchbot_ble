@@ -12,6 +12,7 @@ a pure advert source (never connected to). See PLAN-curtain3-group.md.
 
 import typing as ty
 
+from bleak.exc import BleakError
 from homeassistant.components import bluetooth
 from homeassistant.components.cover import (
     ATTR_POSITION,
@@ -22,14 +23,24 @@ from homeassistant.components.cover import (
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry
 from homeassistant.helpers.entity import Entity
 
 from ... import generic_entity
-from ...core import DOMAIN, SwitchbotCoordinator, SwitchbotEntity, normalize_mac
+from ...core import (
+    DOMAIN,
+    CommandError,
+    SwitchbotCoordinator,
+    SwitchbotEntity,
+    async_request,
+    normalize_mac,
+)
 from ...proto.curtain3 import (
+    ChainInfoReply,
     Curtain3ServiceData,
     CurtainIndex,
+    GetChainInfo,
     SetPercentage,
     Stop,
 )
@@ -300,3 +311,35 @@ class _Curtain3BothCover(_Curtain3GroupCover):
         if primary is None or secondary is None:
             return None
         return (primary.position + secondary.position) // 2
+
+
+def _format_mac(raw: bytes) -> str:
+    """Format a 6-byte chain-reply MAC as an HA address.
+
+    SwitchBot writes MACs in display order on the wire (the manufacturer-data MAC
+    matches the device address byte-for-byte), so no reversal.
+    """
+    return ":".join(f"{b:02X}" for b in raw)
+
+
+async def build_group(
+    hass: HomeAssistant,
+    primary: str,
+    name: str,
+    adv: bluetooth.BluetoothServiceInfoBleak | None,
+) -> Curtain3Group:
+    """Build a `Curtain3Group`, discovering the secondary from the chain.
+
+    Connects to the primary once and reads GetChainInfo — the secondary is its
+    `next_mac`. Raises `ConfigEntryNotReady` on BLE failure so setup retries with
+    backoff (the curtain may just be briefly unreachable).
+    """
+    try:
+        reply = await async_request(
+            hass, primary, GetChainInfo().to_bytes(), ChainInfoReply, name=name
+        )
+    except (CommandError, BleakError, TimeoutError) as err:
+        raise ConfigEntryNotReady(
+            f"Curtain 3 group {primary}: chain read failed: {err}"
+        ) from err
+    return Curtain3Group(hass, primary, _format_mac(reply.next_mac), name, adv)

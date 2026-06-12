@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from ..platforms import SwitchbotDevice
 from ..proto import DeviceType
 from .blind_tilt import BlindTiltCoordinator
-from .curtain3 import Curtain3Coordinator
+from .curtain3 import Curtain3Coordinator, build_group
 from .curtain3 import discovery as curtain3_discovery
 from .leak import LeakCoordinator
 
@@ -52,13 +52,24 @@ _BY_DEVICE_TYPE: dict[str, DeviceEntry] = {
 }
 
 
-def build_coordinator(
+async def build_coordinator(
     hass: HomeAssistant,
+    *,
     device_type: str,
     address: str,
     name: str,
     adv: bluetooth.BluetoothServiceInfoBleak | None,
+    is_group: bool = False,
 ) -> SwitchbotDevice:
+    """Build the per-entry runtime device.
+
+    A Curtain 3 group (`is_group`) connects to the primary to read the chain, so
+    this is async; a standalone device is constructed synchronously from the
+    DeviceType registry. (The group is not a DeviceType — it's keyed off the
+    entry's `is_group` flag, not the registry.)
+    """
+    if is_group:
+        return await build_group(hass, address, name, adv)
     entry = _BY_DEVICE_TYPE.get(device_type)
     if entry is None:
         raise ValueError(device_type)

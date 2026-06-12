@@ -8,12 +8,13 @@ import typing as ty
 
 from ...core import CONF_IS_GROUP
 from ...proto.curtain3 import Curtain3ServiceData
-from .group import Curtain3Group
+from .group import Curtain3Group, build_group
 from .single import Curtain3Coordinator, parse_advertisement
 
 __all__ = [
     "Curtain3Coordinator",
     "Curtain3Group",
+    "build_group",
     "discovery",
     "parse_advertisement",
 ]
