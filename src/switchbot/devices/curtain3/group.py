@@ -25,10 +25,10 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import device_registry
 from homeassistant.helpers.entity import Entity
 
-from .. import generic_entity
-from ..core import DOMAIN, SwitchbotCoordinator, SwitchbotEntity, normalize_mac
-from ..proto.curtain3 import Curtain3ServiceData, SetPercentage, Stop
-from .curtain3 import parse_advertisement
+from ... import generic_entity
+from ...core import DOMAIN, SwitchbotCoordinator, SwitchbotEntity, normalize_mac
+from ...proto.curtain3 import Curtain3ServiceData, SetPercentage, Stop
+from .single import parse_advertisement
 
 # Command member bitmask (decomp: LEFT=1, RIGHT=2, both=3). Primary is member 0
 # (bit 0), secondary member 1 (bit 1).

@@ -12,10 +12,10 @@ from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
-from .. import generic_entity
-from ..core import SwitchbotCoordinator, SwitchbotEntity
-from ..proto.core import SWITCHBOT_SERVICE
-from ..proto.curtain3 import INDEX_SINGLE, Curtain3ServiceData, SetPercentage, Stop
+from ... import generic_entity
+from ...core import SwitchbotCoordinator, SwitchbotEntity
+from ...proto.core import SWITCHBOT_SERVICE
+from ...proto.curtain3 import INDEX_SINGLE, Curtain3ServiceData, SetPercentage, Stop
 
 
 def parse_advertisement(
