@@ -27,14 +27,13 @@ from homeassistant.helpers.entity import Entity
 
 from ... import generic_entity
 from ...core import DOMAIN, SwitchbotCoordinator, SwitchbotEntity, normalize_mac
-from ...proto.curtain3 import Curtain3ServiceData, SetPercentage, Stop
+from ...proto.curtain3 import (
+    Curtain3ServiceData,
+    CurtainIndex,
+    SetPercentage,
+    Stop,
+)
 from .single import parse_advertisement
-
-# Command member bitmask (decomp: LEFT=1, RIGHT=2, both=3). Primary is member 0
-# (bit 0), secondary member 1 (bit 1).
-INDEX_PRIMARY = 1
-INDEX_SECONDARY = 2
-INDEX_BOTH = 3
 
 
 class _Curtain3Member(SwitchbotCoordinator[Curtain3ServiceData]):
@@ -135,14 +134,14 @@ class Curtain3Group:
 
     # --- commands: all relay through the primary's connection ---
 
-    async def async_set_position(self, index: int, position: int) -> None:
+    async def async_set_position(self, index: CurtainIndex, position: int) -> None:
         """`position` is the SwitchBot value (0 = open, 100 = closed). For the
         `both` index the target is duplicated to each member."""
-        position2 = position if index == INDEX_BOTH else 0
+        position2 = position if index == CurtainIndex.BOTH else 0
         cmd = SetPercentage(index=index, position=position, position2=position2)
         await self._primary.async_send_command(cmd.to_bytes())
 
-    async def async_stop(self, index: int) -> None:
+    async def async_stop(self, index: CurtainIndex) -> None:
         await self._primary.async_send_command(Stop(index=index).to_bytes())
 
     # --- device-major entity definition ---
@@ -152,10 +151,14 @@ class Curtain3Group:
             case "cover":
                 return [
                     _Curtain3MemberCover(
-                        self, self._primary, INDEX_PRIMARY, "primary", "Primary"
+                        self, self._primary, CurtainIndex.PRIMARY, "primary", "Primary"
                     ),
                     _Curtain3MemberCover(
-                        self, self._secondary, INDEX_SECONDARY, "secondary", "Secondary"
+                        self,
+                        self._secondary,
+                        CurtainIndex.SECONDARY,
+                        "secondary",
+                        "Secondary",
                     ),
                     _Curtain3BothCover(self),
                 ]
@@ -219,7 +222,7 @@ class _Curtain3GroupCover(SwitchbotEntity[Curtain3ServiceData], CoverEntity):  #
         self,
         group: Curtain3Group,
         coordinator: _Curtain3Member,
-        index: int,
+        index: CurtainIndex,
         suffix: str,
         label: str,
     ) -> None:
@@ -278,7 +281,7 @@ class _Curtain3BothCover(_Curtain3GroupCover):
     """
 
     def __init__(self, group: Curtain3Group) -> None:
-        super().__init__(group, group._primary, INDEX_BOTH, "both", "Both")
+        super().__init__(group, group._primary, CurtainIndex.BOTH, "both", "Both")
         self._secondary = group._secondary
 
     async def async_added_to_hass(self) -> None:

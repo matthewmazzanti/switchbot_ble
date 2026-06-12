@@ -6,6 +6,7 @@ roundtrip serialization against the SwitchBot BLE wire format.
 
 import struct
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import ClassVar
 
 from ..core import (
@@ -31,14 +32,25 @@ from ..core import (
 # Curtain-only subsystem bytes
 SUB_INFO = 0x81
 
-# Motion modes (CurtainConst)
-MOTION_PERFORMANCE = 0
-MOTION_QUIET = 1
-MOTION_SLOW = 2
 
-# Device index values
-INDEX_SINGLE = 1
-INDEX_BOTH = 3
+class CurtainIndex(IntEnum):
+    """Command target — the member bitmask (decomp: LEFT=1, RIGHT=2, both=3).
+
+    Index 1 is the primary member, which is also a standalone curtain's sole
+    member; 2 is the secondary; 3 addresses both at once.
+    """
+
+    PRIMARY = 1
+    SECONDARY = 2
+    BOTH = 3
+
+
+class MotionMode(IntEnum):
+    """Curtain motion profile (CurtainConst)."""
+
+    PERFORMANCE = 0
+    QUIET = 1
+    SLOW = 2
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +61,7 @@ INDEX_BOTH = 3
 @dataclass(frozen=True, slots=True)
 class SetPercentage:  # 57 0F 45 01 01 ..
     _HEADER: ClassVar[bytes] = ext_set(SUB_MOVE, 0x01)
-    index: int
+    index: CurtainIndex
     position: int
     position2: int = 0
 
@@ -59,13 +71,13 @@ class SetPercentage:  # 57 0F 45 01 01 ..
     @classmethod
     def from_bytes(cls, data: bytes) -> SetPercentage:
         p = tail(cls._HEADER, data)
-        return cls(index=p[0], position=p[1], position2=p[2])
+        return cls(index=CurtainIndex(p[0]), position=p[1], position2=p[2])
 
 
 @dataclass(frozen=True, slots=True)
 class Stop:  # 57 0F 45 01 00 ..
     _HEADER: ClassVar[bytes] = ext_set(SUB_MOVE, 0x00)
-    index: int = INDEX_SINGLE
+    index: CurtainIndex = CurtainIndex.PRIMARY
 
     def to_bytes(self) -> bytes:
         return build(self._HEADER, self.index)
@@ -73,13 +85,15 @@ class Stop:  # 57 0F 45 01 00 ..
     @classmethod
     def from_bytes(cls, data: bytes) -> Stop:
         p = tail(cls._HEADER, data)
-        return cls(index=p[0])
+        return cls(index=CurtainIndex(p[0]))
 
 
 @dataclass(frozen=True, slots=True)
 class GetMoveInfo:  # 57 0F 46 01 ..
     _HEADER: ClassVar[bytes] = ext_get(SUB_MOVE)
-    index: int = INDEX_SINGLE
+    # NB: this index is 0-based (0=primary, 1=secondary per readCurtainMoveInfo),
+    # NOT the 1/2/3 move-action bitmask — so it's a plain int, not CurtainIndex.
+    index: int = 0
 
     def to_bytes(self) -> bytes:
         return build(self._HEADER, self.index)

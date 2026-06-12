@@ -15,7 +15,7 @@ from homeassistant.helpers.entity import Entity
 from ... import generic_entity
 from ...core import SwitchbotCoordinator, SwitchbotEntity
 from ...proto.core import SWITCHBOT_SERVICE
-from ...proto.curtain3 import INDEX_SINGLE, Curtain3ServiceData, SetPercentage, Stop
+from ...proto.curtain3 import Curtain3ServiceData, CurtainIndex, SetPercentage, Stop
 
 
 def parse_advertisement(
@@ -65,7 +65,7 @@ class Curtain3Coordinator(SwitchbotCoordinator[Curtain3ServiceData]):
     async def async_set_curtain_position(self, position: int) -> None:
         """`position` is the SwitchBot position (0 = open, 100 = closed)."""
         await self.async_send_command(
-            SetPercentage(index=INDEX_SINGLE, position=position).to_bytes()
+            SetPercentage(index=CurtainIndex.PRIMARY, position=position).to_bytes()
         )
 
     async def async_open(self) -> None:

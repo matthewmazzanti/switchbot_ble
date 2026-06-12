@@ -10,6 +10,7 @@ from switchbot.proto.curtain3.commands import (
     ClearDelay,
     ClearLightActions,
     ContinueMove,
+    CurtainIndex,
     DisableNotify,
     EnableNotify,
     GetAdvancedInfo,
@@ -124,20 +125,22 @@ class TestFixedCommandWireFormat:
 
 class TestSetPercentageWireFormat:
     def test_single(self):
-        cmd = SetPercentage(index=1, position=50)
+        cmd = SetPercentage(index=CurtainIndex.PRIMARY, position=50)
         assert cmd.to_bytes() == bytes([0x57, 0x0F, 0x45, 0x01, 0x01, 0x01, 50, 0x00])
 
     def test_group(self):
-        cmd = SetPercentage(index=3, position=50, position2=75)
+        cmd = SetPercentage(index=CurtainIndex.BOTH, position=50, position2=75)
         assert cmd.to_bytes() == bytes([0x57, 0x0F, 0x45, 0x01, 0x01, 0x03, 50, 75])
 
 
 class TestStopWireFormat:
     def test_single(self):
-        assert Stop(index=1).to_bytes() == bytes([0x57, 0x0F, 0x45, 0x01, 0x00, 0x01])
+        cmd = Stop(index=CurtainIndex.PRIMARY)
+        assert cmd.to_bytes() == bytes([0x57, 0x0F, 0x45, 0x01, 0x00, 0x01])
 
     def test_group(self):
-        assert Stop(index=3).to_bytes() == bytes([0x57, 0x0F, 0x45, 0x01, 0x00, 0x03])
+        cmd = Stop(index=CurtainIndex.BOTH)
+        assert cmd.to_bytes() == bytes([0x57, 0x0F, 0x45, 0x01, 0x00, 0x03])
 
 
 class TestContinueMoveWireFormat:
@@ -207,29 +210,29 @@ class TestFixedCommandRoundtrip:
 
 class TestSetPercentageRoundtrip:
     def test_single(self):
-        cmd = SetPercentage(index=1, position=50)
+        cmd = SetPercentage(index=CurtainIndex.PRIMARY, position=50)
         assert SetPercentage.from_bytes(cmd.to_bytes()) == cmd
 
     def test_group(self):
-        cmd = SetPercentage(index=3, position=25, position2=75)
+        cmd = SetPercentage(index=CurtainIndex.BOTH, position=25, position2=75)
         assert SetPercentage.from_bytes(cmd.to_bytes()) == cmd
 
     def test_zero(self):
-        cmd = SetPercentage(index=1, position=0)
+        cmd = SetPercentage(index=CurtainIndex.PRIMARY, position=0)
         assert SetPercentage.from_bytes(cmd.to_bytes()) == cmd
 
     def test_full(self):
-        cmd = SetPercentage(index=1, position=100)
+        cmd = SetPercentage(index=CurtainIndex.PRIMARY, position=100)
         assert SetPercentage.from_bytes(cmd.to_bytes()) == cmd
 
 
 class TestStopRoundtrip:
     def test_single(self):
-        cmd = Stop(index=1)
+        cmd = Stop(index=CurtainIndex.PRIMARY)
         assert Stop.from_bytes(cmd.to_bytes()) == cmd
 
     def test_group(self):
-        cmd = Stop(index=3)
+        cmd = Stop(index=CurtainIndex.BOTH)
         assert Stop.from_bytes(cmd.to_bytes()) == cmd
 
 

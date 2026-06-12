@@ -3,8 +3,6 @@
 from ..core import FixedCommand
 from .advertisement import Curtain3ManufacturerData, Curtain3ServiceData
 from .commands import (
-    INDEX_BOTH,
-    INDEX_SINGLE,
     CalibrateIndex,
     Calibration,
     CalibrationMode,
@@ -13,6 +11,7 @@ from .commands import (
     ClearDelay,
     ClearLightActions,
     ContinueMove,
+    CurtainIndex,
     DisableNotify,
     EnableNotify,
     GetAdvancedInfo,
@@ -32,6 +31,7 @@ from .commands import (
     GetTimer,
     GetTimerCount,
     GetWorkMode,
+    MotionMode,
     Reboot,
     ResetPwm,
     SetDelay,
@@ -64,11 +64,11 @@ from .responses import (
 )
 
 __all__ = [
-    "INDEX_BOTH",
-    "INDEX_SINGLE",
     "CaliDistanceReply",
     "CaliModeReply",
     "ChainInfoReply",
+    "CurtainIndex",
+    "MotionMode",
     "Curtain3ManufacturerData",
     "Curtain3ServiceData",
     "CurtainInfoReply",
