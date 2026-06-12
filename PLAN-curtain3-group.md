@@ -136,14 +136,15 @@ HA. Scaffolding notes from the decomp investigation + design decisions so far.
 
 ## Cleanup (post-implementation)
 
-- Move the member index constants (`INDEX_PRIMARY`/`INDEX_SECONDARY`/`INDEX_BOTH`,
-  currently in `devices/curtain3_group.py`) into `proto/` — they're wire values
-  (the command member bitmask), not HA concerns. (`INDEX_SINGLE`/`INDEX_BOTH`
-  already live in `proto/curtain3/commands.py` — consolidate.)
-- Replace ad-hoc "related state" ints with `IntEnum`s in `proto/` — member index,
-  and the response enums surfaced by the new parsers (`motion_status`,
-  `action_mode`, `threshold_type`, calibration mode, work mode, …). Gives names +
-  validation instead of bare ints.
+- [x] Member index constants moved into `proto/` as `CurtainIndex(IntEnum)`
+  (PRIMARY/SECONDARY/BOTH), consolidating the old INDEX_* in both proto + group;
+  `MotionMode(IntEnum)` too. `index: CurtainIndex` locked on SetPercentage/Stop +
+  the group command path (the 1/2/3 bitmask). NB: `index` is non-uniform —
+  GetMoveInfo/calibration/settings use a 0-based device index, left as `int`.
+  (Found + fixed: GetMoveInfo's default 1 was reading the secondary; now 0.)
+- [ ] Remaining `IntEnum`s for the response "related state" ints surfaced by the
+  parsers (`motion_status`, `action_mode`, `threshold_type`, cali mode, work
+  mode, …) — give names + validation instead of bare ints.
 
 ## Sequencing (rough)
 
