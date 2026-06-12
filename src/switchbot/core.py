@@ -39,6 +39,13 @@ def normalize_mac(mac: str) -> str:
     return mac.strip().upper()
 
 
+class _Reply(Protocol):
+    """A reply type: decodes a notify reply via a `parse` classmethod."""
+
+    @classmethod
+    def parse(cls, data: bytes) -> Self: ...
+
+
 class SwitchbotCoordinator[T](PassiveBluetoothDataUpdateCoordinator, abc.ABC):
     """Per-device object: owns the BLE subscription, parsed state, and the
     device's command/connection path.
@@ -96,22 +103,19 @@ class SwitchbotCoordinator[T](PassiveBluetoothDataUpdateCoordinator, abc.ABC):
         # super() flips _available True and fans out to entity listeners.
         super()._async_handle_bluetooth_event(service_info, change)
 
-    async def async_send_command(self, payload: bytes) -> CommandReply:
-        """Send a GATT command and return its acknowledgement.
+    async def async_send_command[R: _Reply](
+        self, payload: bytes, reply: type[R] = CommandReply
+    ) -> R:
+        """Send a GATT command and decode its reply into `reply` (default
+        `CommandReply`, the plain ack).
 
-        Serializes on the per-device lock so we never open two overlapping
-        connections to one device. This is the command/ack case of
-        `async_request` (reply = CommandReply); for a typed read, call
-        `async_request` directly with the reply type."""
+        The locked, coordinator-side mirror of `async_request`: serializes on the
+        per-device lock so we never open two overlapping connections to one
+        device. Pass a reply type to read typed state, or omit it for a command."""
         async with self._ble_lock:
             return await async_request(
-                self.hass, self.address, payload, CommandReply, name=self.device_name
+                self.hass, self.address, payload, reply, name=self.device_name
             )
-
-
-class _Reply(Protocol):
-    @classmethod
-    def parse(cls, data: bytes) -> Self: ...
 
 
 async def async_request[R: _Reply](
