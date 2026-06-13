@@ -15,7 +15,7 @@ no notifications, so there is no commands/responses module.
   bytes 0-5 are the MAC, fields start at byte 6:
     byte 6     sequence number
     byte 7     battery (bits 6:0)
-    byte 8     alarm_mode (bit 7), current_state (bit 6), alarming (bit 5),
+    byte 8     alarm_on_wet (bit 7), wet (bit 6), audible (bit 5),
                alarm_volume (bits 4:3), beat_state (bit 2), alarm_num (bits 1:0)
     bytes 9-12  state_change_time (big-endian UTC, uint32)
     byte 13    alarm_duration
@@ -60,9 +60,12 @@ class LeakManufacturerData:
 
     sequence: int  # byte 6, rolling advertisement counter
     battery: int  # 0-100
-    alarm_mode: int  # 0=dehydrate (dry alarm), 1=inundate (wet alarm)
-    current_state: int  # 0=dry, 1=wet
-    alarming: bool  # buzzer/alert currently active (index5608_wd_is_alarm)
+    # bit 7: alarm trigger — True = inundate (alarm when wet), False = dehydrate
+    # (alarm when dry). Sets which `wet` value the device treats as a problem.
+    # (index5600_wd_alarm_mode)
+    alarm_on_wet: bool
+    wet: bool  # bit 6: water present (index5601_wd_cur_state)
+    audible: bool  # bit 5: buzzer currently sounding (index5608_wd_is_alarm)
     alarm_volume: int  # 0-3
     # index5604_wd_beat_state. The app parses this bit and only logs it: it is
     # not read by WoWaterDetectorDevice, not in refreshPros(), and absent from
@@ -76,19 +79,12 @@ class LeakManufacturerData:
     alarm_interval: int  # index5607_wd_alarm_interval_time
     test_utc: int  # 4-byte big-endian UTC (index5610_wd_test_UTC)
 
-    @property
-    def in_alert(self) -> bool:
-        # Per WoWaterDetectorDevice.isInAlert: the device is in alert when the
-        # current measured state matches the configured alarm mode (inundate +
-        # wet, or dehydrate + dry).
-        return self.alarm_mode == self.current_state
-
     def to_bytes(self) -> bytes:
         # fmt: off
         b8 = (
-            ((self.alarm_mode & 0x01) << 7)
-            | ((self.current_state & 0x01) << 6)
-            | (self.alarming << 5)
+            (self.alarm_on_wet << 7)
+            | (self.wet << 6)
+            | (self.audible << 5)
             | ((self.alarm_volume & 0x03) << 3)
             | (self.beat_state << 2)
             | (self.alarm_num & 0x03)
@@ -117,9 +113,9 @@ class LeakManufacturerData:
         return cls(
             sequence=data[6],
             battery=data[7] & 0x7F,
-            alarm_mode=(b8 & 0x80) >> 7,
-            current_state=(b8 & 0x40) >> 6,
-            alarming=bool(b8 & 0x20),
+            alarm_on_wet=bool(b8 & 0x80),
+            wet=bool(b8 & 0x40),
+            audible=bool(b8 & 0x20),
             alarm_volume=(b8 & 0x18) >> 3,
             beat_state=bool(b8 & 0x04),
             alarm_num=b8 & 0x03,

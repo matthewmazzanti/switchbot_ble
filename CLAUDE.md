@@ -56,6 +56,7 @@ tests/proto/    protocol roundtrip tests
 docs/protocol/  verified per-device protocol notes (BLIND_TILT.md)
 tools/apk/      APK download/decompile script
 decomp/         decompiled app source (gitignored; see decomp/CLAUDE.md)
+todo.md         deferred work — a checklist, one or two sentences per item
 ```
 
 See `custom_components/switchbot/CLAUDE.md` for the integration architecture and conventions.

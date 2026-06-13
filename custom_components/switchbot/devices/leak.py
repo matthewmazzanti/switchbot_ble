@@ -11,10 +11,13 @@ verified-absent surface), but being Wi-Fi-connected it does accept the shared
 clock-sync command over GATT — exposed here as the Sync Time button / the
 ``switchbot.sync_time`` action via ``async_sync_time``.
 
-Entities: the primary leak + alarm signals and battery; a diagnostic group
-covering the rest of the advertisement (alarm mode/volume, the rolling sequence,
-the alarm timing config, and the last-alert / last-test timestamps); and the
-Sync Time button. Two modeled fields are deliberately *not* surfaced:
+Entities: the primary signals — Leak (absolute wet/dry reading), Alert (the
+device's problem state: reading matches the wet/dry mode's expectation), and
+battery; a diagnostic group covering the rest (Audible — the buzzer, which can
+be silenced so it's not a trustworthy problem signal; alarm mode/volume; the
+rolling sequence; the alarm timing config; and the last-alert / last-test
+timestamps); and the Sync Time button. Two modeled fields are deliberately *not*
+surfaced:
 ``beat_state`` (the app parses the bit but never acts on it — meaning
 unconfirmed) and ``alarm_num`` (raw 0-3 with no documented meaning). Both stay
 in proto if we ever pin them down.
@@ -118,30 +121,36 @@ class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
                 return [
                     generic_entity.BinarySensor(
                         coordinator=self,
-                        # current_state: 0 = dry, 1 = wet (water present).
-                        is_on_cb=lambda data: data.current_state == 1,
+                        # The device's "there's a problem" signal: the reading
+                        # matches the configured wet/dry mode's expectation. This
+                        # cross-field condition lives here, not in proto (proto
+                        # models single wire fields; combining them is our job).
+                        # The primary problem indicator, distinct from `audible`
+                        # (the buzzer) and `wet` (the raw reading).
+                        is_on_cb=lambda data: data.wet == data.alarm_on_wet,
+                        unique_id=f"{self.address}:alert",
+                        name=f"{self.device_name} Alert",
+                        device_class=BinarySensorDeviceClass.PROBLEM,
+                    ),
+                    generic_entity.BinarySensor(
+                        coordinator=self,
+                        # wet: the absolute moisture reading, independent of the
+                        # wet/dry mode (cf. Alert, which factors the mode in).
+                        is_on_cb=lambda data: data.wet,
                         unique_id=f"{self.address}:leak",
                         name=f"{self.device_name} Leak",
                         device_class=BinarySensorDeviceClass.MOISTURE,
                     ),
                     generic_entity.BinarySensor(
                         coordinator=self,
-                        # alarming: the device is actively in alarm.
-                        is_on_cb=lambda data: data.alarming,
-                        unique_id=f"{self.address}:alarm",
-                        name=f"{self.device_name} Alarm",
-                        device_class=BinarySensorDeviceClass.PROBLEM,
-                    ),
-                    generic_entity.BinarySensor(
-                        coordinator=self,
-                        # in_alert: measured state matches the configured alarm
-                        # mode (the logical alert condition; distinct from the
-                        # buzzer-on `alarming` above). Diagnostic — derived, and
-                        # overlaps the user-facing Leak/Alarm signals.
-                        is_on_cb=lambda data: data.in_alert,
-                        unique_id=f"{self.address}:in_alert",
-                        name=f"{self.device_name} In Alert",
-                        device_class=None,
+                        # audible: the buzzer is actively sounding. Diagnostic,
+                        # not a primary alert: it depends on the volume setting,
+                        # so a silenced device can be flooding with this off —
+                        # Alert is the signal to trust for "there's a problem".
+                        is_on_cb=lambda data: data.audible,
+                        unique_id=f"{self.address}:audible",
+                        name=f"{self.device_name} Audible",
+                        device_class=BinarySensorDeviceClass.SOUND,
                         entity_category=EntityCategory.DIAGNOSTIC,
                     ),
                 ]
@@ -158,10 +167,10 @@ class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
                     ),
                     generic_entity.Sensor(
                         coordinator=self,
-                        # alarm_mode 0 = dehydrate (dry alarm), 1 = inundate
-                        # (wet alarm) — per the proto field / index5600_wd_alarm_mode.
+                        # alarm_on_wet: True = inundate (alarm when wet), False
+                        # = dehydrate (alarm when dry). Sets the Alert expectation.
                         native_value_cb=(
-                            lambda data: "Wet" if data.alarm_mode else "Dry"
+                            lambda data: "Wet" if data.alarm_on_wet else "Dry"
                         ),
                         unique_id=f"{self.address}:alarm_mode",
                         name=f"{self.device_name} Alarm Mode",
