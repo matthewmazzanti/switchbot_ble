@@ -13,8 +13,8 @@ clock-sync command over GATT — exposed here as the Sync Time button / the
 
 Entities: the primary leak + alarm signals and battery; a diagnostic group
 covering the rest of the advertisement (alarm mode/volume, the rolling sequence,
-the alarm timing config, and the last-state-change / last-test timestamps); and
-the Sync Time button. Two modeled fields are deliberately *not* surfaced:
+the alarm timing config, and the last-alert / last-test timestamps); and the
+Sync Time button. Two modeled fields are deliberately *not* surfaced:
 ``beat_state`` (the app parses the bit but never acts on it — meaning
 unconfirmed) and ``alarm_num`` (raw 0-3 with no documented meaning). Both stay
 in proto if we ever pin them down.
@@ -34,10 +34,6 @@ from .. import generic_entity
 from ..core import SwitchbotCoordinator
 from ..proto.core import MANUFACTURER_ID
 from ..proto.leak import LeakManufacturerData, UtcTime
-
-# alarm_mode wire values → labels (per WoWaterDetectorParser index5600_wd_alarm_mode
-# and the proto field doc): which measured state the device alarms on.
-_ALARM_MODE = {0: "dehydrate", 1: "inundate"}
 
 
 def parse_advertisement(
@@ -162,13 +158,17 @@ class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
                     ),
                     generic_entity.Sensor(
                         coordinator=self,
-                        native_value_cb=lambda data: _ALARM_MODE.get(data.alarm_mode),
+                        # alarm_mode 0 = dehydrate (dry alarm), 1 = inundate
+                        # (wet alarm) — per the proto field / index5600_wd_alarm_mode.
+                        native_value_cb=(
+                            lambda data: "Wet" if data.alarm_mode else "Dry"
+                        ),
                         unique_id=f"{self.address}:alarm_mode",
                         name=f"{self.device_name} Alarm Mode",
                         device_class=SensorDeviceClass.ENUM,
                         native_unit_of_measurement=None,
                         state_class=None,
-                        options=list(_ALARM_MODE.values()),
+                        options=["Wet", "Dry"],
                         entity_category=EntityCategory.DIAGNOSTIC,
                     ),
                     generic_entity.Sensor(
@@ -218,9 +218,15 @@ class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
                     ),
                     generic_entity.Sensor(
                         coordinator=self,
+                        # state_change_time = when the wet/dry reading last
+                        # flipped. The app reads this exact field as
+                        # getLastAlertUTC() and uses it as the alarm message's
+                        # `alarmTime` (WoWaterDetectorDevice / WoWaterDetectorParser),
+                        # so "Last Alert" reflects its intent. unique_id stays
+                        # `state_change_time` to keep the existing entity.
                         native_value_cb=lambda data: _as_utc(data.state_change_time),
                         unique_id=f"{self.address}:state_change_time",
-                        name=f"{self.device_name} Last State Change",
+                        name=f"{self.device_name} Last Alert",
                         device_class=SensorDeviceClass.TIMESTAMP,
                         native_unit_of_measurement=None,
                         state_class=None,
