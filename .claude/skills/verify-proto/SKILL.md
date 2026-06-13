@@ -5,7 +5,7 @@ description: Verify an existing proto/<device>/ against the decompiled SwitchBot
 
 # Verify a protocol layer against the decompiled app
 
-Compare an existing `src/switchbot/proto/<device>/` to the authoritative
+Compare an existing `custom_components/switchbot/proto/<device>/` to the authoritative
 decompiled app and fix any mismatch. The decompiled app is the source of truth
 — never accept the Python as correct on faith. (Verification caught an inverted
 `moving` bit + wrong battery source + 8-vs-4-byte timestamp + wrong subsystem
@@ -22,7 +22,7 @@ that asserted the wrong polarity).
 
 - Ensure `decomp/` is populated: `just decomp` if `decomp/VERSION` is missing.
   Read `decomp/CLAUDE.md` for the investigation map.
-- Read the modules under `src/switchbot/proto/<device>/` (advertisement,
+- Read the modules under `custom_components/switchbot/proto/<device>/` (advertisement,
   commands, responses) and the `core/` helpers they use.
 - Locate the authoritative sources (patterns in `decomp/CLAUDE.md`):
   advertisement `protocol/scan/delegate/Wo<Device>Parser.java`; responses
@@ -71,5 +71,5 @@ existing tests may encode the same wrong assumption (see the intro warning).
 
 ## 4. Gate
 
-`just test` (or `uv run pytest tests/proto`), `uv run pyright src/switchbot`,
+`just test` (or `uv run pytest tests/proto`), `uv run pyright custom_components/switchbot`,
 `uv run ruff check src tests`. Then report the alignment results.

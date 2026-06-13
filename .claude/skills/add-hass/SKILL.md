@@ -5,9 +5,9 @@ description: Wire an already-written protocol layer (proto/<device>/) into the H
 
 # Wire a device into the integration
 
-Given a verified `src/switchbot/proto/<device>/`, add the Home Assistant layer.
-Read `src/switchbot/CLAUDE.md` for the architecture and conventions, and use
-`src/switchbot/devices/blind_tilt.py` as the reference implementation.
+Given a verified `custom_components/switchbot/proto/<device>/`, add the Home Assistant layer.
+Read `custom_components/switchbot/CLAUDE.md` for the architecture and conventions, and use
+`custom_components/switchbot/devices/blind_tilt.py` as the reference implementation.
 
 ## 1. Confirm the scope with the user FIRST
 
@@ -28,7 +28,7 @@ everything.
 
 ## 2. The device coordinator + state
 
-Create `src/switchbot/devices/<device>.py`:
+Create `custom_components/switchbot/devices/<device>.py`:
 
 - State: a **flat, frozen, typed** dataclass with **no `None` fields**. If the
   advertisement spans multiple BLE fields, give a `<Device>State` a

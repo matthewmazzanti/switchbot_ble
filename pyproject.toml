@@ -17,6 +17,13 @@ dependencies = [
 requires = ["uv_build>=0.9.22,<0.10.0"]
 build-backend = "uv_build"
 
+# The integration lives at custom_components/switchbot/ (HACS requires that
+# layout). Point the build backend there so it's still importable as `switchbot`
+# locally — tests and pyright use the bare name; HA loads it as
+# custom_components.switchbot at runtime.
+[tool.uv.build-backend]
+module-root = "custom_components"
+
 [dependency-groups]
 dev = [
     "ruff>=0.14.10",

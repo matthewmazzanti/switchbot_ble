@@ -5,10 +5,10 @@ description: Reverse-engineer and write the pure protocol layer (proto/<device>/
 
 # Add a device's protocol layer
 
-Write `src/switchbot/proto/<device>/` — the pure, HA-free, typed wire protocol —
+Write `custom_components/switchbot/proto/<device>/` — the pure, HA-free, typed wire protocol —
 verified against the decompiled app. This is protocol work only; wiring into the
 integration is the separate `add-hass` skill. `proto/blind_tilt/` is the
-reference implementation; read it and `src/switchbot/proto/CLAUDE.md` first.
+reference implementation; read it and `custom_components/switchbot/proto/CLAUDE.md` first.
 
 ## 1. Ground in the decompiled app
 
@@ -49,7 +49,7 @@ The decompiled app is the source of truth — never guess bit layouts.
 
 ## 2. Write the modules
 
-Under `src/switchbot/proto/<device>/`, mirroring `blind_tilt/`:
+Under `custom_components/switchbot/proto/<device>/`, mirroring `blind_tilt/`:
 
 - `advertisement.py` — one frozen dataclass **per BLE field** (service data
   `0xFD3D` and/or manufacturer data `0x0969`). Each gets `parse(bytes)` and
@@ -95,7 +95,7 @@ polarity or source wrong, because encode/decode are symmetric. So also add
 **byte-level assertions anchored to the app's actual bytes** (the exact frame /
 indices / masks the decomp uses), which is what actually catches a wrong
 interpretation. Run `uv run pytest tests/proto` (or `just test`); pyright must
-be clean: `uv run pyright src/switchbot`.
+be clean: `uv run pyright custom_components/switchbot`.
 
 ## 5. Hand off
 

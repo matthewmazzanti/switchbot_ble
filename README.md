@@ -20,9 +20,17 @@ what's wired up).
 
 ## Installation
 
-This is a custom component. Copy `src/switchbot/` into your Home Assistant
-config as `custom_components/switchbot/`, then restart Home Assistant. Devices
-are picked up automatically via Bluetooth discovery.
+### HACS (custom repository)
+
+1. In HACS → ⋮ → **Custom repositories**, add `https://github.com/matthewmazzanti/switchbot_ble` with type **Integration**.
+2. Install **SwitchBot BLE** from HACS, then restart Home Assistant.
+
+### Manual
+
+Copy `custom_components/switchbot/` from this repo into your Home Assistant
+config under `custom_components/`, then restart Home Assistant.
+
+Either way, devices are picked up automatically via Bluetooth discovery.
 
 > **Note:** the domain is `switchbot`, which overrides Home Assistant's built-in
 > SwitchBot integration. Remove or rename one if you do not intend that.

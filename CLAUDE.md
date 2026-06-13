@@ -1,8 +1,11 @@
 # SwitchBot BLE — Home Assistant custom component
 
-A custom Home Assistant integration for SwitchBot Bluetooth-LE devices. At
-runtime it loads as `custom_components.switchbot`; locally the package is
-`src/switchbot/` (imported as `switchbot`). Currently supports **blind tilt**
+A custom Home Assistant integration for SwitchBot Bluetooth-LE devices. The
+package lives at `custom_components/switchbot/` (the layout HACS requires); HA
+loads it as `custom_components.switchbot` at runtime, while locally it's
+importable as `switchbot` (uv's `module-root = "custom_components"` maps the
+bare name to it — so tests and pyright use `switchbot`). Currently supports
+**blind tilt**
 and **curtain 3** (classic curtain is deferred — the hardware on hand is a
 Curtain 3, so that's what's wired up).
 
@@ -23,7 +26,7 @@ Curtain 3, so that's what's wired up).
 
 - `just check` — pyright + ruff + pytest (the pre-commit gate).
 - `just test` — `uv run pytest`.
-- `uv run pyright src/switchbot` / `uv run ruff check src tests` / `just format`.
+- `uv run pyright custom_components/switchbot` / `uv run ruff check custom_components tests` / `just format`.
 - `just run-hass` — run HA in podman with this component mounted (needs `sudo`;
   if it prompts, run it yourself via `! just run-hass`).
 - `just decomp` — (re)generate `./decomp/` from the SwitchBot APK.
@@ -43,18 +46,19 @@ Index only — see each skill for the canonical "what/when".
 ## Layout
 
 ```
-src/switchbot/
+custom_components/switchbot/
   proto/        pure wire protocol (HA-free, typed, tested) — see its CLAUDE.md
   core.py       coordinator + entity base (on HA passive-bluetooth)
   devices/      per-model coordinator + entity definitions
   *.py          thin platform files (sensor/binary_sensor/cover) + config_flow
+hacs.json       HACS repository manifest (custom-repo install)
 tests/proto/    protocol roundtrip tests
 docs/protocol/  verified per-device protocol notes (BLIND_TILT.md)
 tools/apk/      APK download/decompile script
 decomp/         decompiled app source (gitignored; see decomp/CLAUDE.md)
 ```
 
-See `src/switchbot/CLAUDE.md` for the integration architecture and conventions.
+See `custom_components/switchbot/CLAUDE.md` for the integration architecture and conventions.
 
 ## Gotchas
 

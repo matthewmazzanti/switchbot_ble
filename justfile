@@ -12,7 +12,7 @@ run-hass:
         -e TZ="America/New_York" \
         -v "./hass-state:/config/.storage" \
         -v "./configuration.yaml:/config/configuration.yaml:ro" \
-        -v "./src/switchbot:/config/custom_components/switchbot:ro" \
+        -v "./custom_components/switchbot:/config/custom_components/switchbot:ro" \
         docker.io/homeassistant/home-assistant:stable
 
 format:
@@ -25,8 +25,8 @@ test:
 
 # Type-check, lint, and test — the full pre-commit gate.
 check:
-    uv run pyright src/switchbot tests
-    uv run ruff check src tests
+    uv run pyright custom_components/switchbot tests
+    uv run ruff check custom_components tests
     uv run pytest
 
 # Download + unpack + decompile the SwitchBot APK into ./decomp (gitignored).
