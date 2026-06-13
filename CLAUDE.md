@@ -49,7 +49,7 @@ src/switchbot/
   devices/      per-model coordinator + entity definitions
   *.py          thin platform files (sensor/binary_sensor/cover) + config_flow
 tests/proto/    protocol roundtrip tests
-docs/protocol/  decompiled-app protocol notes (BLIND_TILT.md, PROTOCOL.md)
+docs/protocol/  verified per-device protocol notes (BLIND_TILT.md)
 tools/apk/      APK download/decompile script
 decomp/         decompiled app source (gitignored; see decomp/CLAUDE.md)
 ```

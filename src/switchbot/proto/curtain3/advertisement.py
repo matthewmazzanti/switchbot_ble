@@ -23,7 +23,7 @@ class Curtain3ServiceData:
     """Service-data broadcast (UUID 0xFD3D), >= 6 bytes."""
 
     pair_mode: bool
-    is_primary: bool  # byte 1 bit 7; the group's controllable node (was "master")
+    is_primary: bool  # byte 1 bit 7; the group's controllable node
     calibrated: bool  # byte 1 bit 6; set = calibrated
     battery: int  # 0-100
     position: int  # 0-100
