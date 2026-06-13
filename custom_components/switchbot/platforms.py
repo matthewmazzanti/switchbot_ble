@@ -1,5 +1,5 @@
 import logging
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
@@ -7,6 +7,20 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class SupportsSyncTime(Protocol):
+    """Capability protocol: a runtime device whose clock can be synced via the
+    `switchbot.sync_time` action. Kept separate from `SwitchbotDevice` so the
+    action targets only devices that actually implement it (an `isinstance`
+    check on `entry.runtime_data`), and any future Wi-Fi device opts in just by
+    growing this method."""
+
+    @property
+    def address(self) -> str: ...
+
+    async def async_sync_time(self) -> None: ...
 
 
 class SwitchbotDevice(Protocol):

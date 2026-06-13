@@ -1,0 +1,11 @@
+sync_time:
+  name: Sync time
+  description: >-
+    Push Home Assistant's current UTC time to the targeted SwitchBot
+    device's clock. Only devices that support a clock (e.g. the Water Leak
+    Detector) are affected; other targeted devices are ignored.
+  target:
+    device:
+      integration: switchbot
+    entity:
+      integration: switchbot

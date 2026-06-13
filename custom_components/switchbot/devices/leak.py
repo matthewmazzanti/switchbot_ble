@@ -1,27 +1,43 @@
 """SwitchBot Water Leak Detector — coordinator + entities.
 
-A passive, advertisement-only sensor: no GATT commands, no scan-response. All
-surfaced state lives in the manufacturer-data field (``LeakManufacturerData``),
-so that proto dataclass is used directly as the coordinator state (cf.
-curtain3.py). The service-data field only carries the device-type byte, which
-config_flow uses for detection.
+Status is advertisement-only: the device reports via manufacturer data
+(``LeakManufacturerData``), with no status GATT and no scan-response, so that
+proto dataclass is used directly as the coordinator state (cf. curtain3.py). The
+service-data field only carries the device-type byte, which config_flow uses for
+detection.
 
-Scope (per add-hass): the alarm signals + battery. Deferred fields
-(alarm mode/volume/interval, beat state, timestamps, sequence) stay in proto and
-are cheap to surface later.
+It has no device-specific BLE controls (``proto.leak`` documents that
+verified-absent surface), but being Wi-Fi-connected it does accept the shared
+clock-sync command over GATT — exposed here as the Sync Time button / the
+``switchbot.sync_time`` action via ``async_sync_time``.
+
+Entities: the primary leak + alarm signals and battery; a diagnostic group
+covering the rest of the advertisement (alarm mode/volume, the rolling sequence,
+the alarm timing config, and the last-state-change / last-test timestamps); and
+the Sync Time button. Two modeled fields are deliberately *not* surfaced:
+``beat_state`` (the app parses the bit but never acts on it — meaning
+unconfirmed) and ``alarm_num`` (raw 0-3 with no documented meaning). Both stay
+in proto if we ever pin them down.
 """
+
+from datetime import datetime, timezone
 
 from homeassistant.components import bluetooth
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
+from homeassistant.util import dt as dt_util
 
 from .. import generic_entity
 from ..core import SwitchbotCoordinator
 from ..proto.core import MANUFACTURER_ID
-from ..proto.leak import LeakManufacturerData
+from ..proto.leak import LeakManufacturerData, UtcTime
+
+# alarm_mode wire values → labels (per WoWaterDetectorParser index5600_wd_alarm_mode
+# and the proto field doc): which measured state the device alarms on.
+_ALARM_MODE = {0: "dehydrate", 1: "inundate"}
 
 
 def parse_advertisement(
@@ -36,6 +52,14 @@ def parse_advertisement(
         return LeakManufacturerData.parse(mfr)
     except ValueError:
         return None
+
+
+def _as_utc(epoch: int) -> datetime | None:
+    """A 4-byte UTC field as a tz-aware datetime, or None when unset (0 = the
+    epoch, which the device sends before the event has ever happened)."""
+    if epoch == 0:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc)
 
 
 class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
@@ -62,10 +86,38 @@ class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
     ) -> LeakManufacturerData | None:
         return parse_advertisement(service_info)
 
+    # --- commands (SupportsSyncTime) ---
+
+    async def async_sync_time(self) -> None:
+        """Push HA's current UTC to the device clock.
+
+        Backs the `switchbot.sync_time` action. A GATT write (the shared
+        Wi-Fi-device clock-sync frame), so it connects despite this coordinator
+        being advertisement-only/non-connectable — `async_send_command` resolves
+        a connectable path itself.
+
+        The payload is a thunk so its timestamp is taken at the write, not here:
+        connecting can take seconds (plus retries), which would otherwise skew
+        the clock we're trying to set."""
+        await self.async_send_command(
+            lambda: UtcTime(timestamp=int(dt_util.utcnow().timestamp())).to_bytes()
+        )
+
     # --- device-major entity definition ---
 
     def create_platform_entities(self, platform: str) -> list[Entity]:
         match platform:
+            case "button":
+                return [
+                    generic_entity.Button(
+                        coordinator=self,
+                        press_cb=self.async_sync_time,
+                        unique_id=f"{self.address}:sync_time",
+                        name=f"{self.device_name} Sync Time",
+                        # A control the user operates → Configuration section.
+                        entity_category=EntityCategory.CONFIG,
+                    ),
+                ]
             case "binary_sensor":
                 return [
                     generic_entity.BinarySensor(
@@ -84,6 +136,18 @@ class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
                         name=f"{self.device_name} Alarm",
                         device_class=BinarySensorDeviceClass.PROBLEM,
                     ),
+                    generic_entity.BinarySensor(
+                        coordinator=self,
+                        # in_alert: measured state matches the configured alarm
+                        # mode (the logical alert condition; distinct from the
+                        # buzzer-on `alarming` above). Diagnostic — derived, and
+                        # overlaps the user-facing Leak/Alarm signals.
+                        is_on_cb=lambda data: data.in_alert,
+                        unique_id=f"{self.address}:in_alert",
+                        name=f"{self.device_name} In Alert",
+                        device_class=None,
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
                 ]
             case "sensor":
                 return [
@@ -95,6 +159,82 @@ class LeakCoordinator(SwitchbotCoordinator[LeakManufacturerData]):
                         device_class=SensorDeviceClass.BATTERY,
                         native_unit_of_measurement=PERCENTAGE,
                         state_class=SensorStateClass.MEASUREMENT,
+                    ),
+                    generic_entity.Sensor(
+                        coordinator=self,
+                        native_value_cb=lambda data: _ALARM_MODE.get(data.alarm_mode),
+                        unique_id=f"{self.address}:alarm_mode",
+                        name=f"{self.device_name} Alarm Mode",
+                        device_class=SensorDeviceClass.ENUM,
+                        native_unit_of_measurement=None,
+                        state_class=None,
+                        options=list(_ALARM_MODE.values()),
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
+                    generic_entity.Sensor(
+                        coordinator=self,
+                        native_value_cb=lambda data: data.alarm_volume,
+                        unique_id=f"{self.address}:alarm_volume",
+                        name=f"{self.device_name} Alarm Volume",
+                        # Raw 0-3 level; the app exposes no unit/scale.
+                        device_class=None,
+                        native_unit_of_measurement=None,
+                        state_class=SensorStateClass.MEASUREMENT,
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
+                    generic_entity.Sensor(
+                        coordinator=self,
+                        native_value_cb=lambda data: data.alarm_duration,
+                        unique_id=f"{self.address}:alarm_duration",
+                        name=f"{self.device_name} Alarm Duration",
+                        # Raw byte; the wire carries no unit (the app only logs
+                        # it as `alarmLong`), so we don't assert seconds/minutes.
+                        device_class=None,
+                        native_unit_of_measurement=None,
+                        state_class=None,
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
+                    generic_entity.Sensor(
+                        coordinator=self,
+                        native_value_cb=lambda data: data.alarm_interval,
+                        unique_id=f"{self.address}:alarm_interval",
+                        name=f"{self.device_name} Alarm Interval",
+                        # Raw byte; unit unconfirmed (logged as `alarmInteval`).
+                        device_class=None,
+                        native_unit_of_measurement=None,
+                        state_class=None,
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
+                    generic_entity.Sensor(
+                        coordinator=self,
+                        native_value_cb=lambda data: data.sequence,
+                        unique_id=f"{self.address}:sequence",
+                        name=f"{self.device_name} Advertisement Sequence",
+                        # Rolling counter; no state_class (not a measurement).
+                        device_class=None,
+                        native_unit_of_measurement=None,
+                        state_class=None,
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
+                    generic_entity.Sensor(
+                        coordinator=self,
+                        native_value_cb=lambda data: _as_utc(data.state_change_time),
+                        unique_id=f"{self.address}:state_change_time",
+                        name=f"{self.device_name} Last State Change",
+                        device_class=SensorDeviceClass.TIMESTAMP,
+                        native_unit_of_measurement=None,
+                        state_class=None,
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
+                    generic_entity.Sensor(
+                        coordinator=self,
+                        native_value_cb=lambda data: _as_utc(data.test_utc),
+                        unique_id=f"{self.address}:test_utc",
+                        name=f"{self.device_name} Last Test",
+                        device_class=SensorDeviceClass.TIMESTAMP,
+                        native_unit_of_measurement=None,
+                        state_class=None,
+                        entity_category=EntityCategory.DIAGNOSTIC,
                     ),
                 ]
             case _:

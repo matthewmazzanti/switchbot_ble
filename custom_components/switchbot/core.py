@@ -2,6 +2,7 @@ import abc
 import asyncio
 import contextlib
 import logging
+from collections.abc import Callable
 from typing import Protocol, Self
 
 from bleak import BleakClient
@@ -29,6 +30,12 @@ CONF_DEVICE_TYPE = "device_type"  # entry.data: the proto DeviceType value (int)
 # connect+write+await exchange if it fails or times out.
 COMMAND_TIMEOUT = 8.0  # seconds to wait for the device's notify reply
 COMMAND_ATTEMPTS = 3  # total tries per command before giving up
+
+# A command payload: fixed bytes, or a thunk resolved at write time. Connection
+# setup can take seconds (plus retries), so a time-sensitive command (e.g. a
+# clock sync) passes a thunk to capture its timestamp at the moment of the
+# write, not when the command was queued.
+type CommandPayload = bytes | Callable[[], bytes]
 
 
 class CommandError(Exception):
@@ -104,14 +111,16 @@ class SwitchbotCoordinator[T](PassiveBluetoothDataUpdateCoordinator, abc.ABC):
         super()._async_handle_bluetooth_event(service_info, change)
 
     async def async_send_command[R: _Reply](
-        self, payload: bytes, reply: type[R] = CommandReply
+        self, payload: CommandPayload, reply: type[R] = CommandReply
     ) -> R:
         """Send a GATT command and decode its reply into `reply` (default
         `CommandReply`, the plain ack).
 
         The locked, coordinator-side mirror of `async_request`: serializes on the
         per-device lock so we never open two overlapping connections to one
-        device. Pass a reply type to read typed state, or omit it for a command."""
+        device. Pass a reply type to read typed state, or omit it for a command.
+        `payload` may be a thunk to defer building it until the write (see
+        `CommandPayload`)."""
         async with self._ble_lock:
             return await async_request(
                 self.hass, self.address, payload, reply, name=self.device_name
@@ -121,7 +130,7 @@ class SwitchbotCoordinator[T](PassiveBluetoothDataUpdateCoordinator, abc.ABC):
 async def async_request[R: _Reply](
     hass: HomeAssistant,
     address: str,
-    payload: bytes,
+    payload: CommandPayload,
     reply: type[R],
     *,
     name: str | None = None,
@@ -133,7 +142,10 @@ async def async_request[R: _Reply](
     class, get an instance back). The status byte is gated generically inside the
     retry loop (`_require_ok`), so a busy/error status retries; `reply.parse`
     then decodes the payload of an ok'd reply. The caller serializes the command,
-    so it can pass `to_bytes(fw_version=…)` or other args. Coordinator-free, so
+    so it can pass `to_bytes(fw_version=…)` or other args; a `CommandPayload`
+    thunk is resolved inside `_exchange` just before the write (and re-resolved
+    per retry), so a clock sync reflects the write moment, not the queue moment.
+    Coordinator-free, so
     the config-flow/setup path can read before any coordinator exists, e.g. the
     chain read:
     `await async_request(hass, primary, GetChainInfo().to_bytes(), ChainInfoReply)`;
@@ -204,7 +216,7 @@ def _require_ok(raw: bytes, name: str) -> None:
 
 
 async def _exchange(
-    hass: HomeAssistant, address: str, payload: bytes, name: str
+    hass: HomeAssistant, address: str, payload: CommandPayload, name: str
 ) -> bytes:
     ble_device = bluetooth.async_ble_device_from_address(
         hass, address, connectable=True
@@ -244,10 +256,13 @@ async def _exchange(
 
         await client.start_notify(NOTIFY_CHAR_UUID, _on_notify)
         try:
+            # Resolve the payload as late as possible: now that we're connected,
+            # a thunk's timestamp reflects the write moment, not the queue moment.
+            data = payload() if callable(payload) else payload
+            await client.write_gatt_char(WRITE_CHAR_UUID, data, response=False)
             # SwitchBot's command char is write-without-response by design;
             # the device acks asynchronously on the notify char.
-            _LOGGER.debug("%s: write -> %s", name, payload.hex(" "))
-            await client.write_gatt_char(WRITE_CHAR_UUID, payload, response=False)
+            _LOGGER.debug("%s: write -> %s", name, data.hex(" "))
             async with asyncio.timeout(COMMAND_TIMEOUT):
                 raw = await reply
         finally:
