@@ -115,6 +115,15 @@ class TestParseFixed:
         assert r.pre_mac == bytes.fromhex("a1a2a3a4a5a6")
         assert r.next_mac == bytes.fromhex("b1b2b3b4b5b6")
 
+    def test_chain_info_empty_neighbour(self):
+        # All-zero next_mac (EMPTY_MAC) => no neighbour => None (standalone).
+        data = bytes([0x01, 0x00] + [0xA1] * 6 + [0x00] * 6 + [0x00] * 6)
+        r = ChainInfoReply.parse(data)
+        assert r.pre_mac == bytes([0xA1] * 6)
+        assert r.next_mac is None
+        # roundtrips: None -> zeros -> None
+        assert ChainInfoReply.parse(r.to_bytes()) == r
+
     def test_curtain_info_real_layout(self):
         # byte1=0x43 (delay on, motion 3), byte2=0x22 (action 0x20, timer 2),
         # byte3=2 link, byte4=0xCE (solar, pos 78), byte5=0x60 (no chg, batt 96),

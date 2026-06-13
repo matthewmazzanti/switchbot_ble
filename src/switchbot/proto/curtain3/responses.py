@@ -20,6 +20,15 @@ from typing import Self
 
 from ..core import RESP_STATUS_OK, build
 
+# A chain neighbour MAC of all-zeros (the protocol's EMPTY_MAC) means "no
+# neighbour"; all-FF is treated the same defensively.
+_NO_MAC = (bytes(6), b"\xff" * 6)
+
+
+def _mac_or_none(raw: bytes) -> bytes | None:
+    mac = bytes(raw)
+    return None if mac in _NO_MAC else mac
+
 
 @dataclass(frozen=True, slots=True)
 class ChainInfoReply:
@@ -27,21 +36,30 @@ class ChainInfoReply:
 
     BleMsgParser.parseCurtainChainInfo:298. The app reads only two 6-byte MAC
     slices; bytes 1 and 8-13 are present on the wire but unread (left zeroed
-    here). MACs are raw bytes — colon-hex formatting is the consumer's job.
+    here). A neighbour MAC of all-zeros (the protocol's `EMPTY_MAC`) means "no
+    neighbour" and is decoded to None — so a standalone curtain reports
+    next_mac=None. MACs are raw bytes; colon-hex formatting is the consumer's job.
     """
 
-    pre_mac: bytes  # upstream neighbour (WO_CURTAIN_PRE_MAC), 6 bytes
-    next_mac: bytes  # downstream neighbour = the secondary (WO_CURTAIN_NEXT_MAC)
+    pre_mac: bytes | None  # upstream neighbour (WO_CURTAIN_PRE_MAC), None if head
+    next_mac: bytes | None  # downstream neighbour = the secondary, None if none
 
     @classmethod
     def parse(cls, data: bytes) -> Self:
         if len(data) < 20:
             raise ValueError(f"chain-info reply needs >= 20 bytes, got {len(data)}")
-        return cls(pre_mac=bytes(data[2:8]), next_mac=bytes(data[14:20]))
+        return cls(pre_mac=_mac_or_none(data[2:8]), next_mac=_mac_or_none(data[14:20]))
 
     def to_bytes(self) -> bytes:
         # byte 0 status, byte 1 + bytes 8-13 reserved (unread by the app)
-        return build(RESP_STATUS_OK, 0, self.pre_mac, bytes(6), self.next_mac)
+        empty = bytes(6)
+        return build(
+            RESP_STATUS_OK,
+            0,
+            self.pre_mac or empty,
+            empty,
+            self.next_mac or empty,
+        )
 
 
 @dataclass(frozen=True, slots=True)

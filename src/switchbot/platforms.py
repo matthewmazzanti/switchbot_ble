@@ -17,7 +17,8 @@ class SwitchbotDevice(Protocol):
     coordinator (which authors no entities) each fit only the role they play.
     """
 
-    address: str
+    @property
+    def address(self) -> str: ...
 
     def async_start(self) -> CALLBACK_TYPE: ...
 

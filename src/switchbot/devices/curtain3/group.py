@@ -99,11 +99,15 @@ class Curtain3Group:
     ) -> None:
         last = bluetooth.async_last_service_info
         self._name = name
-        self.address = normalize_mac(primary)
+        self._primary_address = normalize_mac(primary)
         self._secondary_address = normalize_mac(secondary)
         # Primary is the connectable command target; secondary is advert-only.
         self._primary = _Curtain3Member(
-            hass, primary, name, adv or last(hass, self.address), connectable=True
+            hass,
+            primary,
+            name,
+            adv or last(hass, self._primary_address),
+            connectable=True,
         )
         self._secondary = _Curtain3Member(
             hass,
@@ -118,12 +122,18 @@ class Curtain3Group:
         return self._name
 
     @property
+    def address(self) -> str:
+        """The group's identity = the primary's MAC (the `SwitchbotDevice`
+        contract; not the HA-coordinator `address`, since this isn't one)."""
+        return self._primary_address
+
+    @property
     def device_info(self) -> device_registry.DeviceInfo:
         # One device, identified by the primary, that owns both BT connections.
         return device_registry.DeviceInfo(
-            identifiers={(DOMAIN, self.address)},
+            identifiers={(DOMAIN, self._primary_address)},
             connections={
-                (device_registry.CONNECTION_BLUETOOTH, self.address),
+                (device_registry.CONNECTION_BLUETOOTH, self._primary_address),
                 (device_registry.CONNECTION_BLUETOOTH, self._secondary_address),
             },
             name=self._name,
@@ -192,7 +202,7 @@ class Curtain3Group:
         return generic_entity.Sensor(
             coordinator=coordinator,
             native_value_cb=lambda d: d.battery,
-            unique_id=f"{self.address}:battery:{suffix}",
+            unique_id=f"{self._primary_address}:battery:{suffix}",
             name=f"{self._name} {label} Battery",
             device_class=SensorDeviceClass.BATTERY,
             native_unit_of_measurement=PERCENTAGE,
@@ -206,7 +216,7 @@ class Curtain3Group:
         return generic_entity.BinarySensor(
             coordinator=coordinator,
             is_on_cb=lambda d: d.calibrated,
-            unique_id=f"{self.address}:calibrated:{suffix}",
+            unique_id=f"{self._primary_address}:calibrated:{suffix}",
             name=f"{self._name} {label} Calibrated",
             device_class=None,
             device_info=self.device_info,
@@ -298,7 +308,10 @@ class _Curtain3BothCover(_Curtain3GroupCover):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()  # subscribes to the primary
         self.async_on_remove(
-            self._secondary.async_add_listener(self._handle_coordinator_update)
+            self._secondary.async_add_listener(
+                self._handle_coordinator_update,
+                self.coordinator_context,
+            )
         )
 
     @property
@@ -322,18 +335,14 @@ def _format_mac(raw: bytes) -> str:
     return ":".join(f"{b:02X}" for b in raw)
 
 
-# A chain reply with no linked neighbour (decomp's EMPTY_MAC) — all zeros, with
-# all-FF treated as empty too for safety.
-_EMPTY_MACS = (bytes(6), b"\xff" * 6)
-
-
 async def resolve_secondary(hass: HomeAssistant, primary: str, name: str) -> str | None:
     """Interview the curtain's chain; return the secondary's MAC, or None if it's
     a standalone curtain (no linked neighbour).
 
     Connects to the primary once and reads GetChainInfo — `next_mac` is the
-    secondary, or empty for a lone curtain. Raises `ConfigEntryNotReady` on BLE
-    failure so setup retries with backoff (the curtain may be briefly asleep).
+    secondary, or None for a lone curtain (the parser decodes EMPTY_MAC to None).
+    Raises `ConfigEntryNotReady` on BLE failure so setup retries with backoff (the
+    curtain may be briefly asleep).
     """
     try:
         reply = await async_request(
@@ -343,6 +352,4 @@ async def resolve_secondary(hass: HomeAssistant, primary: str, name: str) -> str
         raise ConfigEntryNotReady(
             f"Curtain 3 {primary}: chain read failed: {err}"
         ) from err
-    if reply.next_mac in _EMPTY_MACS:
-        return None
-    return _format_mac(reply.next_mac)
+    return _format_mac(reply.next_mac) if reply.next_mac is not None else None
